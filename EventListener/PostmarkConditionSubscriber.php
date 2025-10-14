@@ -72,42 +72,46 @@ class PostmarkConditionSubscriber implements EventSubscriberInterface
         );
 
         $event->addCondition(
-            'postmark.subscription_change',
+            'postmark.delivery_status',
             [
-                'label'         => 'mautic.postmark.campaign.condition.subscription_change',
-                'description'   => 'mautic.postmark.campaign.condition.subscription_change_descr',
-                'eventName'     => PostmarkEvents::ON_CAMPAIGN_CONDITION,
+                'label'           => 'mautic.postmark.campaign.condition.delivery_status',
+                'description'     => 'mautic.postmark.campaign.condition.delivery_status_descr',
+                'eventName'       => PostmarkEvents::ON_CAMPAIGN_CONDITION,
+                'formType'        => \Mautic\CoreBundle\Form\Type\TextType::class,
+                'formTypeOptions' => [
+                    'label' => 'mautic.postmark.campaign.condition.delivery_status.value',
+                    'attr'  => [
+                        'class'   => 'form-control',
+                        'tooltip' => 'mautic.postmark.campaign.condition.delivery_status.tooltip',
+                    ],
+                ],
             ]
         );
     }
 
     public function onCampaignCondition(CampaignExecutionEvent $event)
     {
-        $logEntry = $event->getLogEntry();
+        $eventDetails = $event->getEventDetails();
+        if (!$eventDetails) {
+            return $event->setResult(false);
+        }
+        
+        $eventType = $eventDetails->getType();
+        $config = $event->getConfig();
         $lead = $event->getLead();
         
-        if (!$logEntry || !$lead) {
-            return $event->setResult(false);
-        }
-        
-        $logEvent = $logEntry->getEvent();
-        if (!$logEvent) {
-            return $event->setResult(false);
-        }
-        
-        $eventType = $logEvent->getType();
-        $campaign = $logEvent->getCampaign();
-        
-        if (!$campaign) {
+        if (!$lead) {
             return $event->setResult(false);
         }
         
         $leadId = $lead->getId();
-        $currentCampaignId = $campaign->getId();
-        $currentEventId = $logEvent->getId();
+        $campaign = $eventDetails->getCampaign();
+        if (!$campaign) {
+            return $event->setResult(false);
+        }
         
-        // Get event configuration (properties) from the campaign event
-        $config = $logEvent->getProperties() ?: [];
+        $currentCampaignId = $campaign->getId();
+        $currentEventId = $eventDetails->getId();
 
         // Find the previous Postmark action in the same campaign flow
         $previousPostmarkEvent = $this->findPreviousPostmarkEventInFlow($currentCampaignId, $currentEventId, $leadId);
@@ -137,10 +141,6 @@ class PostmarkConditionSubscriber implements EventSubscriberInterface
 
             case 'postmark.spam_complaint':
                 $conditionMet = (bool) ($previousPostmarkEvent['postmark_spam_complaint'] ?? 0);
-                break;
-
-            case 'postmark.subscription_change':
-                $conditionMet = (bool) ($previousPostmarkEvent['postmark_subscription_change'] ?? 0);
                 break;
 
             case 'postmark.delivery_status':

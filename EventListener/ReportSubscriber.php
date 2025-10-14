@@ -62,8 +62,6 @@ class ReportSubscriber implements EventSubscriberInterface
                 't.postmark_bounce_detail'   => ['label' => 'PM Bounce Detail', 'type' => 'string'],
                 't.postmark_spam_complaint'  => ['label' => 'PM Complaint', 'type' => 'bool'],
                 't.postmark_spam_complaint_at'=> ['label' => 'PM Complaint At', 'type' => 'datetime'],
-                't.postmark_subscription_change' => ['label' => 'PM Subscription Change', 'type' => 'bool'],
-                't.postmark_subscription_change_at' => ['label' => 'PM Subscription Change At', 'type' => 'datetime'],
                 't.postmark_deferred_count'  => ['label' => 'PM Deferrals', 'type' => 'int'],
                 't.postmark_last_deferred_at'=> ['label' => 'PM Last Deferral', 'type' => 'datetime'],
             ],
