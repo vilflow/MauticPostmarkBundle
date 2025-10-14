@@ -3,13 +3,17 @@
 namespace MauticPlugin\MauticPostmarkBundle\Controller;
 
 use Doctrine\DBAL\Connection;
+use MauticPlugin\MauticPostmarkBundle\Service\SuiteCRMService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 class WebhookController
 {
-    public function __construct(private Connection $connection)
+    private ?SuiteCRMService $suiteCRMService = null;
+
+    public function __construct(private Connection $connection, ?SuiteCRMService $suiteCRMService = null)
     {
+        $this->suiteCRMService = $suiteCRMService;
     }
 
     public function handleAction(Request $request): JsonResponse
@@ -199,9 +203,7 @@ class WebhookController
                 $suppress = (bool) ($e['SuppressSending'] ?? false);
                 $status   = $suppress ? 'suppressed' : ($e['SuppressionReason'] ?? 'subscription_changed');
                 $updates += [
-                    'postmark_subscription_change'    => 1,
-                    'postmark_subscription_change_at' => $ts,
-                    'postmark_delivery_status'   => $status,
+                    'postmark_delivery_status' => $status,
                 ];
                 $this->appendEventMetadata($logId, 'subscription_change', $ts, [
                     'MessageID'        => $e['MessageID'] ?? $e['MessageId'] ?? null,
@@ -240,6 +242,11 @@ class WebhookController
         $updates = array_filter($updates, fn ($v) => null !== $v);
         if ($updates) {
             $this->connection->update(MAUTIC_TABLE_PREFIX.'campaign_lead_event_log', $updates, ['id' => $logId]);
+        }
+
+        // Update SuiteCRM Email record if integration is enabled
+        if ($this->suiteCRMService && $this->suiteCRMService->isEnabled()) {
+            $this->updateSuiteCRMEmailRecord($logId, $type, $ts, $e);
         }
     }
 
@@ -300,6 +307,111 @@ class WebhookController
             );
         } catch (\Throwable) {
             // fail silently; metadata is optional
+        }
+    }
+
+    /**
+     * Update SuiteCRM Email record when webhook event is received
+     *
+     * @param int    $logId Mautic campaign log ID
+     * @param string $type  Event type (delivery, open, click, bounce, etc.)
+     * @param string $ts    Timestamp
+     * @param array  $e     Event data from Postmark
+     */
+    private function updateSuiteCRMEmailRecord(int $logId, string $type, string $ts, array $e): void
+    {
+        try {
+            // Get SuiteCRM email ID from log metadata
+            $row = $this->connection->createQueryBuilder()
+                ->select('metadata')
+                ->from(MAUTIC_TABLE_PREFIX.'campaign_lead_event_log')
+                ->where('id = :id')
+                ->setParameter('id', $logId)
+                ->setMaxResults(1)
+                ->executeQuery()
+                ->fetchOne();
+
+            if (!$row) {
+                return;
+            }
+
+            $meta = json_decode($row, true);
+            if (!is_array($meta) || empty($meta['suitecrm']['email_id'])) {
+                return; // No SuiteCRM email ID found
+            }
+
+            $suitecrmEmailId = $meta['suitecrm']['email_id'];
+
+            // Prepare update data based on event type
+            $updateData = [];
+            $description = '';
+
+            switch ($type) {
+                case 'delivery':
+                    $updateData['status'] = 'delivered';
+                    $description = sprintf(
+                        'Delivered at %s to %s',
+                        $ts,
+                        $e['Recipient'] ?? $e['Email'] ?? 'unknown'
+                    );
+                    break;
+
+                case 'open':
+                    $updateData['status'] = 'opened';
+                    $description = sprintf(
+                        'Opened at %s from %s (Platform: %s, Client: %s)',
+                        $ts,
+                        $e['City'] ?? 'unknown location',
+                        $e['Platform'] ?? 'unknown',
+                        $e['Client'] ?? 'unknown'
+                    );
+                    break;
+
+                case 'click':
+                    $updateData['status'] = 'clicked';
+                    $description = sprintf(
+                        'Clicked at %s. Link: %s',
+                        $ts,
+                        $e['OriginalLink'] ?? $e['OriginalLinkUrl'] ?? 'unknown'
+                    );
+                    break;
+
+                case 'bounce':
+                    $updateData['status'] = 'bounced';
+                    $description = sprintf(
+                        'Bounced at %s. Type: %s, Reason: %s',
+                        $ts,
+                        $e['Type'] ?? 'unknown',
+                        $e['Description'] ?? 'unknown'
+                    );
+                    break;
+
+                case 'spamcomplaint':
+                    $updateData['status'] = 'spam_complaint';
+                    $description = sprintf(
+                        'Spam complaint at %s. %s',
+                        $ts,
+                        $e['Description'] ?? ''
+                    );
+                    break;
+
+                default:
+                    // For other event types, just add to description
+                    $description = sprintf('%s event at %s', ucfirst($type), $ts);
+                    break;
+            }
+
+            // Append to description instead of replacing
+            if (!empty($description)) {
+                $updateData['description'] = $description;
+            }
+
+            if (!empty($updateData)) {
+                $this->suiteCRMService->updateEmailRecord($suitecrmEmailId, $updateData);
+            }
+        } catch (\Throwable $ex) {
+            // Fail silently to not break webhook processing
+            // You can log this error if needed
         }
     }
 

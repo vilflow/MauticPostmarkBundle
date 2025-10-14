@@ -8,15 +8,18 @@ use Mautic\CampaignBundle\Event\CampaignBuilderEvent;
 use Mautic\CampaignBundle\Event\PendingEvent;
 use MauticPlugin\MauticPostmarkBundle\Event\PostmarkEvents;
 use MauticPlugin\MauticPostmarkBundle\Form\Type\PostmarkSendType;
+use MauticPlugin\MauticPostmarkBundle\Service\SuiteCRMService;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 class CampaignSubscriber implements EventSubscriberInterface
 {
     private ?Connection $connection = null;
+    private ?SuiteCRMService $suiteCRMService = null;
 
-    public function __construct(?Connection $connection = null)
+    public function __construct(?Connection $connection = null, ?SuiteCRMService $suiteCRMService = null)
     {
-        $this->connection = $connection;
+        $this->connection       = $connection;
+        $this->suiteCRMService  = $suiteCRMService;
     }
 
     private function getConnection(): ?Connection
@@ -161,6 +164,11 @@ class CampaignSubscriber implements EventSubscriberInterface
                 // Ignore if columns not present yet
             }
 
+            // Create SuiteCRM Email record
+            if ($this->suiteCRMService && $this->suiteCRMService->isEnabled()) {
+                $this->createSuiteCRMEmailRecord($log, $from, $to, $contact, $messageId);
+            }
+
             $event->pass($log);
         }
     }
@@ -194,6 +202,64 @@ class CampaignSubscriber implements EventSubscriberInterface
         }
 
         return [$from, $to, $resolvedModel];
+    }
+
+    /**
+     * Create SuiteCRM Email record after sending email
+     *
+     * @param mixed  $log       Campaign log
+     * @param string $from      From email address
+     * @param string $to        To email address
+     * @param mixed  $contact   Contact object
+     * @param string|null $messageId Postmark message ID
+     */
+    private function createSuiteCRMEmailRecord($log, string $from, string $to, $contact, ?string $messageId): void
+    {
+        try {
+            $profileFields = $contact->getProfileFields();
+            $contactId     = $contact->getId();
+
+            // Prepare email data for SuiteCRM
+            $emailData = [
+                'name'        => 'Postmark Email to ' . ($profileFields['firstname'] ?? $to),
+                'status'      => 'sent',
+                'from_addr'   => $from,
+                'to_addrs'    => $to,
+                'description' => 'Email sent via Mautic Postmark integration',
+                'parent_type' => 'Contacts',
+                'parent_id'   => $profileFields['suitecrm_id'] ?? null, // SuiteCRM contact ID from Mautic contact field
+            ];
+
+            // Add date_sent if available
+            if (method_exists($log, 'getDateTriggered') && $log->getDateTriggered()) {
+                $emailData['date_sent'] = $log->getDateTriggered()->format('Y-m-d\TH:i:s\Z');
+            }
+
+            [$success, $suitecrmEmailId, $error] = $this->suiteCRMService->createEmailRecord($emailData);
+
+            if ($success && $suitecrmEmailId) {
+                // Store SuiteCRM email ID in log metadata for later updates
+                $log->appendToMetadata([
+                    'suitecrm' => [
+                        'email_id'   => $suitecrmEmailId,
+                        'created_at' => (new \DateTime())->format('Y-m-d H:i:s'),
+                    ],
+                ]);
+
+                // Also persist in database
+                if ($connection = $this->getConnection()) {
+                    $meta = $log->getMetadata();
+                    $connection->update(
+                        MAUTIC_TABLE_PREFIX.'campaign_lead_event_log',
+                        ['metadata' => json_encode($meta)],
+                        ['id' => $log->getId()]
+                    );
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fail silently to not block email sending
+            // You can log this error if needed
+        }
     }
 
     /**
