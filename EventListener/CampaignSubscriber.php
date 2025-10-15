@@ -176,9 +176,10 @@ class CampaignSubscriber implements EventSubscriberInterface
                     'contact_id' => $contact->getId(),
                     'log_id'     => $log->getId(),
                 ]);
+
                 $this->createSuiteCRMEmailRecord($log, $from, $to, $contact, $messageId);
             } else {
-                $this->logger->info('SuiteCRM email record creation not triggered.', [
+                $this->logger->info('SuiteCRM email record creation not triggered.', [
                     'contact_id' => $contact->getId(),
                     'log_id'     => $log->getId(),
                 ]);
@@ -230,6 +231,7 @@ class CampaignSubscriber implements EventSubscriberInterface
      */
     private function createSuiteCRMEmailRecord($log, string $from, string $to, $contact, ?string $messageId): void
     {
+
         try {
             $profileFields = $contact->getProfileFields();
             $contactId     = $contact->getId();
@@ -283,7 +285,6 @@ class CampaignSubscriber implements EventSubscriberInterface
                     'message_id'        => $messageId,
                 ]);
 
-
                 // Store SuiteCRM email ID in log metadata for later updates
                 $log->appendToMetadata([
                     'suitecrm' => [
@@ -292,6 +293,8 @@ class CampaignSubscriber implements EventSubscriberInterface
                         'description' => $emailData['description'] ?? null,
                     ],
                 ]);
+
+
 
                 // i want update email record in  
 
@@ -306,6 +309,12 @@ class CampaignSubscriber implements EventSubscriberInterface
                 }
             }
         } catch (\Throwable $e) {
+            @file_put_contents(
+                __DIR__ . '/postmark_debug.log', sprintf("[%s] Creating SuiteCRM email record: contact_id=%s, log_id=%s, message_id=%s\n", $e->getMessage()),
+                FILE_APPEND
+            );
+
+
             $this->logger->error('SuiteCRM email record creation failed.', [
                 'contact_id' => isset($contactId) ? $contactId : null,
                 'message_id' => $messageId,

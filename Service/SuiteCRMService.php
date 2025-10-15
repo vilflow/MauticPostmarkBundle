@@ -19,11 +19,17 @@ class SuiteCRMService
         string $suitecrm_password = ''
     ) {
         // Load from injected environment variables
-        $this->baseUrl      = $suitecrm_base_url;
-        $this->clientId     = $suitecrm_client_id;
-        $this->clientSecret = $suitecrm_client_secret;
-        $this->username     = $suitecrm_username;
-        $this->password     = $suitecrm_password;
+//        $this->baseUrl      = $suitecrm_base_url;
+//        $this->clientId     = $suitecrm_client_id;
+//        $this->clientSecret = $suitecrm_client_secret;
+//        $this->username     = $suitecrm_username;
+//        $this->password     = $suitecrm_password;
+
+        $this->baseUrl      = 'https://acaventportal.com/legacy/Api';
+        $this->clientId     = '4d18f246-85e5-7417-2312-68bd1303752f';
+        $this->clientSecret = '12121212';
+        $this->username     = 'admin';
+        $this->password     = 'admin';
     }
 
     /**
@@ -175,6 +181,68 @@ class SuiteCRMService
                 'type'       => 'Emails',
                 'id'         => $emailId,
                 'attributes' => $updateData,
+            ],
+        ];
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => 'PATCH',
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/vnd.api+json',
+                'Accept: application/vnd.api+json',
+                'Authorization: Bearer ' . $this->accessToken,
+            ],
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT        => 30,
+        ]);
+
+        $response   = curl_exec($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $errno      = curl_errno($ch);
+        curl_close($ch);
+
+        if ($errno !== 0) {
+            return [false, 'cURL error: ' . curl_error($ch)];
+        }
+
+        if ($statusCode < 200 || $statusCode >= 300) {
+            $decoded = json_decode((string) $response, true);
+            $errorMsg = 'HTTP ' . $statusCode;
+            if (is_array($decoded) && !empty($decoded['errors'])) {
+                $errorMsg .= ': ' . json_encode($decoded['errors']);
+            }
+            return [false, $errorMsg];
+        }
+
+        return [true, null];
+    }
+
+    /**
+     * Update an existing Email record in SuiteCRM by postmark id
+     *
+     * @param string $emailId Postmark email ID
+     * @param array $updateData Data to update
+     * @return array [success(bool), error(string|null)]
+     */
+    public function updateEmailRecordByPostmarkId(string $emailId, array $updateData): array
+    {
+        if (!$this->isEnabled()) {
+            return [false, 'SuiteCRM integration not configured'];
+        }
+
+        if (!$this->authenticate()) {
+            return [false, 'Failed to authenticate with SuiteCRM'];
+        }
+
+        $url = rtrim($this->baseUrl, '/') . '/Api/V8/module';
+
+        $payload = [
+            'data' => [
+                'type'              => 'Emails',
+                'postmark_id_c'     => $emailId,
+                'attributes'        => $updateData,
             ],
         ];
 

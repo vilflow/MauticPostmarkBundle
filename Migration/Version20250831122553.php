@@ -28,6 +28,7 @@ class Version20250831122553 extends PreUpAssertionMigration
         $this->addSql(<<<SQL
 ALTER TABLE {$this->prefix}campaign_lead_event_log
 ADD postmark_message_id CHAR(36) NULL,
+ADD suitecrm_email_id CHAR(36) NULL,
 ADD postmark_delivery_status VARCHAR(32) NULL,
 ADD postmark_delivered TINYINT(1) NOT NULL DEFAULT 0,
 ADD postmark_delivered_at DATETIME NULL,
