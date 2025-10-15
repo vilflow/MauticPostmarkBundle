@@ -189,7 +189,12 @@ class PostmarkApiService
             
             $name = $template['Name'] ?? 'Unknown';
             $alias = $template['Alias'] ?? '';
-            
+            $templateType = $template['TemplateType'] ?? '';
+
+            if ('Standard' !== $templateType) {
+                continue;
+            }
+                        
             if (!empty($alias)) {
                 $choices[$name . ' (' . $alias . ')'] = $alias;
             }

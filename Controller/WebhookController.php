@@ -18,6 +18,7 @@ class WebhookController
 
     public function handleAction(Request $request): JsonResponse
     {
+
         $rawBody = (string) $request->getContent();
 
         // Optional signature validation if POSTMARK_WEBHOOK_SECRET is set
@@ -57,7 +58,7 @@ class WebhookController
                 ->fetchOne();
 
             if ($logId) {
-                $this->applyUpdate((int) $logId, $recordType, $ts, $e);
+                $this->applyUpdate($messageId, (int) $logId, $recordType, $ts, $e);
             }
 
             return;
@@ -81,15 +82,18 @@ class WebhookController
             ->executeQuery()
             ->fetchOne();
 
+
         if ($logId) {
-            $this->applyUpdate((int) $logId, $recordType, $ts, $e);
+            $this->applyUpdate($messageId, (int) $logId, $recordType, $ts, $e);
         }
     }
 
-    private function applyUpdate(int $logId, string $type, string $ts, array $e): void
+    private function applyUpdate($messageId, int $logId, string $type, string $ts, array $e): void
     {
-        $updates = ['postmark_delivery_status' => null];
 
+       
+
+        $updates = ['postmark_delivery_status' => null];
         switch ($type) {
             case 'delivery':
                 $updates += [
@@ -239,14 +243,17 @@ class WebhookController
                 ]);
         }
 
+        
+
         $updates = array_filter($updates, fn ($v) => null !== $v);
         if ($updates) {
             $this->connection->update(MAUTIC_TABLE_PREFIX.'campaign_lead_event_log', $updates, ['id' => $logId]);
         }
-
+        
         // Update SuiteCRM Email record if integration is enabled
-        if ($this->suiteCRMService && $this->suiteCRMService->isEnabled()) {
-            $this->updateSuiteCRMEmailRecord($logId, $type, $ts, $e);
+        
+        if (true) {
+            $this->updateSuiteCRMEmailRecord( $messageId ,$logId, $type, $ts, $e);
         }
     }
 
@@ -318,9 +325,10 @@ class WebhookController
      * @param string $ts    Timestamp
      * @param array  $e     Event data from Postmark
      */
-    private function updateSuiteCRMEmailRecord(int $logId, string $type, string $ts, array $e): void
+    private function updateSuiteCRMEmailRecord($messageId , int $logId, string $type, string $ts, array $e): void
     {
         try {
+           
             // Get SuiteCRM email ID from log metadata
             $row = $this->connection->createQueryBuilder()
                 ->select('metadata')
@@ -331,16 +339,13 @@ class WebhookController
                 ->executeQuery()
                 ->fetchOne();
 
+                
+
             if (!$row) {
                 return;
             }
 
-            $meta = json_decode($row, true);
-            if (!is_array($meta) || empty($meta['suitecrm']['email_id'])) {
-                return; // No SuiteCRM email ID found
-            }
-
-            $suitecrmEmailId = $meta['suitecrm']['email_id'];
+     
 
             // Prepare update data based on event type
             $updateData = [];
@@ -407,9 +412,12 @@ class WebhookController
             }
 
             if (!empty($updateData)) {
-                $this->suiteCRMService->updateEmailRecord($suitecrmEmailId, $updateData);
+                // @file_put_contents(__DIR__ . '/postmark_debug.log', '88888', FILE_APPEND);
+                $this->suiteCRMService->updateEmailRecordByPostmarkId($messageId, $updateData);
+                // @file_put_contents(__DIR__ . '/postmark_debug.log', '99999', FILE_APPEND);
             }
         } catch (\Throwable $ex) {
+            // @file_put_contents(__DIR__ . '/postmark_debug.log', '777', FILE_APPEND);
             // Fail silently to not break webhook processing
             // You can log this error if needed
         }

@@ -9,17 +9,21 @@ use Mautic\CampaignBundle\Event\PendingEvent;
 use MauticPlugin\MauticPostmarkBundle\Event\PostmarkEvents;
 use MauticPlugin\MauticPostmarkBundle\Form\Type\PostmarkSendType;
 use MauticPlugin\MauticPostmarkBundle\Service\SuiteCRMService;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 class CampaignSubscriber implements EventSubscriberInterface
 {
     private ?Connection $connection = null;
     private ?SuiteCRMService $suiteCRMService = null;
+    private LoggerInterface $logger;
 
-    public function __construct(?Connection $connection = null, ?SuiteCRMService $suiteCRMService = null)
+    public function __construct(?Connection $connection = null, ?SuiteCRMService $suiteCRMService = null, ?LoggerInterface $logger = null)
     {
         $this->connection       = $connection;
         $this->suiteCRMService  = $suiteCRMService;
+        $this->logger           = $logger ?? new NullLogger();
     }
 
     private function getConnection(): ?Connection
@@ -165,8 +169,20 @@ class CampaignSubscriber implements EventSubscriberInterface
             }
 
             // Create SuiteCRM Email record
-            if ($this->suiteCRMService && $this->suiteCRMService->isEnabled()) {
+
+
+            if (true) {
+                $this->logger->info('SuiteCRM email record creation triggered.', [
+                    'contact_id' => $contact->getId(),
+                    'log_id'     => $log->getId(),
+                ]);
+
                 $this->createSuiteCRMEmailRecord($log, $from, $to, $contact, $messageId);
+            } else {
+                $this->logger->info('SuiteCRM email record creation not triggered.', [
+                    'contact_id' => $contact->getId(),
+                    'log_id'     => $log->getId(),
+                ]);
             }
 
             $event->pass($log);
@@ -215,36 +231,74 @@ class CampaignSubscriber implements EventSubscriberInterface
      */
     private function createSuiteCRMEmailRecord($log, string $from, string $to, $contact, ?string $messageId): void
     {
+
         try {
             $profileFields = $contact->getProfileFields();
             $contactId     = $contact->getId();
 
             // Prepare email data for SuiteCRM
+            // Note: SuiteCRM automatically sets date_entered and date_modified
+            $campaign      = $log->getCampaign();
+            $eventEntity   = $log->getEvent();
+            $campaignName  = $campaign ? $campaign->getName() : null;
+            $actionName    = $eventEntity ? $eventEntity->getName() : null;
+            $emailNameParts = array_filter(
+                [$campaignName, $actionName],
+                static fn ($value) => null !== $value && '' !== trim((string) $value)
+            );
+            $emailName = $emailNameParts ? implode(' - ', $emailNameParts) : 'Postmark Email to ' . ($profileFields['lastname'] ?? $to);
+
             $emailData = [
-                'name'        => 'Postmark Email to ' . ($profileFields['firstname'] ?? $to),
+                'name'        => $emailName,
                 'status'      => 'sent',
                 'from_addr'   => $from,
                 'to_addrs'    => $to,
                 'description' => 'Email sent via Mautic Postmark integration',
                 'parent_type' => 'Contacts',
+                'postmark_id_c' => $messageId,
                 'parent_id'   => $profileFields['suitecrm_id'] ?? null, // SuiteCRM contact ID from Mautic contact field
             ];
 
-            // Add date_sent if available
-            if (method_exists($log, 'getDateTriggered') && $log->getDateTriggered()) {
-                $emailData['date_sent'] = $log->getDateTriggered()->format('Y-m-d\TH:i:s\Z');
-            }
+            $this->logger->debug('Attempting to create SuiteCRM email record.', [
+                'contact_id' => $contactId,
+                'message_id' => $messageId,
+                'email_data' => $emailData,
+                'profile_fileds' => $profileFields,
+
+            ]);
 
             [$success, $suitecrmEmailId, $error] = $this->suiteCRMService->createEmailRecord($emailData);
+            
+            if (!$success) {
+                $this->logger->warning('SuiteCRM email record creation returned no success status.', [
+                    'contact_id' => $contactId,
+                    'message_id' => $messageId,
+                    'error'      => $error,
+                    'success'    => $success,
+                    'email data' => $emailData   
+                ]);
+            }
+
 
             if ($success && $suitecrmEmailId) {
+                $this->logger->info('SuiteCRM email record created successfully.', [
+                    'contact_id'        => $contactId,
+                    'suitecrm_email_id' => $suitecrmEmailId,
+                    'message_id'        => $messageId,
+                ]);
+
                 // Store SuiteCRM email ID in log metadata for later updates
                 $log->appendToMetadata([
                     'suitecrm' => [
                         'email_id'   => $suitecrmEmailId,
                         'created_at' => (new \DateTime())->format('Y-m-d H:i:s'),
+                        'description' => $emailData['description'] ?? null,
                     ],
                 ]);
+
+
+
+                // i want update email record in  
 
                 // Also persist in database
                 if ($connection = $this->getConnection()) {
@@ -257,6 +311,16 @@ class CampaignSubscriber implements EventSubscriberInterface
                 }
             }
         } catch (\Throwable $e) {
+           
+
+
+            $this->logger->error('SuiteCRM email record creation failed.', [
+                'contact_id' => isset($contactId) ? $contactId : null,
+                'message_id' => $messageId,
+                'error'      => $e->getMessage(),
+                'exception'  => $e,
+            ]);
+
             // Fail silently to not block email sending
             // You can log this error if needed
         }
