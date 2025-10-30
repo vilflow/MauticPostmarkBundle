@@ -1,0 +1,87 @@
+/**
+ * Postmark Variable Mapping Styles
+ */
+
+.postmark-variable-mapping {
+    margin-top: 15px;
+}
+
+.postmark-variable-mapping .help-block {
+    color: #5d6571;
+    background: #e8f4f8;
+    padding: 10px 15px;
+    border-left: 3px solid #4e5d9d;
+    margin-bottom: 20px;
+    border-radius: 3px;
+}
+
+.postmark-mapping-row {
+    margin-bottom: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.postmark-mapping-row:hover {
+    background: #ffffff;
+    border-color: #4e5d9d;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.postmark-mapping-row .control-label {
+    font-weight: 600;
+    color: #2a2a2a;
+    margin-bottom: 5px;
+    font-size: 13px;
+}
+
+.postmark-mapping-row .form-group {
+    margin-bottom: 10px;
+}
+
+.postmark-mapping-row .form-group:last-of-type {
+    margin-bottom: 0;
+}
+
+.postmark-mapping-row .input-group-addon {
+    background-color: #4e5d9d;
+    color: white;
+    border-color: #4e5d9d;
+}
+
+.postmark-mapping-row input[readonly] {
+    background-color: #fff !important;
+    cursor: not-allowed;
+    font-family: 'Courier New', monospace;
+    color: #495057;
+    font-weight: 500;
+}
+
+.postmark-mapping-row select.form-control {
+    border-color: #ced4da;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.postmark-mapping-row select.form-control:focus {
+    border-color: #4e5d9d;
+    box-shadow: 0 0 0 0.2rem rgba(78, 93, 157, 0.25);
+}
+
+.postmark-mapping-row select.form-control:disabled {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+/* Alert styling */
+.postmark-variable-mapping .alert {
+    margin-top: 10px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .postmark-mapping-row {
+        padding: 10px;
+    }
+}

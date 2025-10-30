@@ -95,15 +95,18 @@ Mautic.postmarkLoadTemplates = function(serverSelectElement) {
 Mautic.postmarkLoadTemplateVariables = function(templateSelectElement) {
     var templateAlias = mQuery(templateSelectElement).val();
     var form = mQuery(templateSelectElement).closest('form');
-    
+
     // Find the server select element to get the server token
     var serverSelect = form.find('.postmark-server-select');
     var serverToken = serverSelect.val();
-    
+
+    console.log('Postmark: Loading template variables for template:', templateAlias);
+
     if (!templateAlias || !serverToken) {
+        console.log('Postmark: Missing template alias or server token');
         return;
     }
-    
+
     // Fetch template variables from server
     mQuery.ajax({
         url: mauticAjaxUrl + '?action=plugin:postmark:getTemplateVariables',
@@ -114,21 +117,25 @@ Mautic.postmarkLoadTemplateVariables = function(templateSelectElement) {
         },
         dataType: 'json',
         success: function(response) {
+            console.log('Postmark: Template variables response:', response);
             if (response.success) {
                 if (response.variables && response.variables.length > 0) {
+                    console.log('Postmark: Found ' + response.variables.length + ' variables:', response.variables);
                     Mautic.postmarkPopulateTemplateModel(form, response.variables);
                 } else {
+                    console.log('Postmark: No variables found');
                     // Still clear existing fields even when no variables found
                     Mautic.postmarkPopulateTemplateModel(form, []);
                 }
             } else {
+                console.log('Postmark: Error in response:', response.message);
                 // Clear fields on error too
                 Mautic.postmarkPopulateTemplateModel(form, []);
             }
         },
-        error: function() {
+        error: function(xhr, status, error) {
+            console.error('Postmark: AJAX error:', status, error);
             // Error - clear existing fields
-            var form = mQuery(templateSelectElement).closest('form');
             Mautic.postmarkPopulateTemplateModel(form, []);
         }
     });
@@ -153,84 +160,235 @@ Mautic.postmarkClearTemplateModel = function(templateModelContainer) {
     }
 };
 
-// Function to populate the SortableListType with template variables
+// Function to populate the template model with cascading dropdowns
 Mautic.postmarkPopulateTemplateModel = function(form, variables) {
-    // Find the template model container - try multiple approaches
-    var templateModelContainer = form.find('[id*="template_model"]').closest('.form-group');
-    
-    if (!templateModelContainer.length) {
-        templateModelContainer = form.find('[data-toggle="sortablelist"]');
+    console.log('Postmark: Populating template model with', variables.length, 'variables');
+
+    // Find the list-sortable container directly
+    var sortableList = form.find('.list-sortable[id*="template_model"]');
+    console.log('Postmark: Found sortable list (method 1):', sortableList.length);
+
+    if (!sortableList.length) {
+        sortableList = form.find('#sortable-campaignevent_properties_template_model, #sortable-postmark_send_template_model');
+        console.log('Postmark: Found sortable list (method 2):', sortableList.length);
     }
-    
-    if (!templateModelContainer.length) {
-        templateModelContainer = form.find('.sortable-list').closest('.form-group');
-    }
-    
-    if (!templateModelContainer.length) {
-        // Last resort - look for any form group containing "template" or "model"
-        form.find('.form-group').each(function() {
-            var labelText = mQuery(this).find('label').text().toLowerCase();
-            if (labelText.indexOf('template') >= 0 && labelText.indexOf('variable') >= 0) {
-                templateModelContainer = mQuery(this);
-                return false; // break
-            }
-        });
-    }
-    
-    if (!templateModelContainer.length) {
+
+    if (!sortableList.length) {
+        console.error('Postmark: Could not find sortable list container');
         return;
     }
-    
+
+    console.log('Postmark: Sortable list ID:', sortableList.attr('id'));
+
+    // Find the form-group container that holds the sortable list
+    var formGroup = sortableList.closest('.form-group');
+    if (!formGroup.length) {
+        formGroup = sortableList.parent();
+    }
+
+    console.log('Postmark: Form group found:', formGroup.length);
+
     // CLEAR EXISTING VARIABLES FIRST
-    Mautic.postmarkClearTemplateModel(templateModelContainer);
-    
-    // Wait a moment for clearing to complete, then add new variables (if any)
-    setTimeout(function() {
-        if (variables && variables.length > 0) {
-            Mautic.postmarkAddTemplateVariables(templateModelContainer, variables);
-        }
-    }, 500); // 500ms delay to ensure clearing is complete
+    Mautic.postmarkClearTemplateModel(formGroup);
+
+    // Hide the sortable list and its controls
+    console.log('Postmark: Hiding sortable list and controls');
+    sortableList.hide();
+    formGroup.find('.btn-add-item').hide(); // Hide the add button
+
+    // Create new custom interface for variable mapping
+    if (variables && variables.length > 0) {
+        // Determine the field name prefix from existing inputs
+        var fieldNamePrefix = Mautic.postmarkGetFieldNamePrefix(sortableList);
+        console.log('Postmark: Field name prefix:', fieldNamePrefix);
+        Mautic.postmarkCreateVariableMappingInterface(formGroup, variables, fieldNamePrefix);
+    } else {
+        console.log('Postmark: No variables to display');
+    }
 };
 
-// Separate function to handle adding the variables  
-Mautic.postmarkAddTemplateVariables = function(templateModelContainer, variables) {
-    var addButton = templateModelContainer.find('.btn-add-item');
-    
-    if (!addButton.length) {
-        return;
+// Helper function to get the field name prefix from existing sortable list
+Mautic.postmarkGetFieldNamePrefix = function(sortableList) {
+    // Try to find an existing input to determine the naming pattern
+    var existingInput = sortableList.find('input[name*="template_model"]').first();
+    if (existingInput.length) {
+        var name = existingInput.attr('name');
+        // Extract the prefix: campaignevent[properties][template_model] or postmark_send[template_model]
+        var match = name.match(/^(.+\[template_model\])\[/);
+        if (match) {
+            return match[1];
+        }
     }
-    
-    // Add each variable one by one
-    variables.forEach(function(variable, index) {
-        setTimeout(function() {
-            // Click the add button to create a new item
-            addButton[0].click();
-            
-            // Wait for the new item to be created, then populate it
-            setTimeout(function() {
-                // Find all sortable items
-                var sortableItems = templateModelContainer.find('.sortable');
-                
-                if (sortableItems.length > 0) {
-                    // Get the last (newest) sortable item
-                    var lastItem = sortableItems.last();
-                    
-                    // Find the label and value inputs within this item
-                    var labelInput = lastItem.find('input.sortable-label');
-                    var valueInput = lastItem.find('input.sortable-value');
-                    
-                    if (labelInput.length && valueInput.length) {
-                        // Set the label (variable name)
-                        labelInput.val(variable);
-                        labelInput.trigger('change');
-                        
-                        // Leave value field empty but set a helpful placeholder
-                        valueInput.val(''); // Keep value empty
-                        valueInput.attr('placeholder', 'Enter value for ' + variable);
-                        valueInput.trigger('change');
-                    }
-                }
-            }, 200); // Small delay to let DOM update
-        }, index * 400); // Stagger the additions with more delay
+
+    // Default fallback based on the sortable list ID
+    var listId = sortableList.attr('id');
+    if (listId && listId.indexOf('campaignevent') >= 0) {
+        return 'campaignevent[properties][template_model]';
+    }
+
+    return 'postmark_send[template_model]';
+};
+
+// Create the new variable mapping interface with cascading dropdowns
+Mautic.postmarkCreateVariableMappingInterface = function(templateModelContainer, variables, fieldNamePrefix) {
+    // Create or clear our custom container
+    var customContainer = templateModelContainer.find('.postmark-variable-mapping');
+    if (!customContainer.length) {
+        customContainer = mQuery('<div class="postmark-variable-mapping"></div>');
+        templateModelContainer.append(customContainer);
+    } else {
+        customContainer.empty();
+    }
+
+    // Load modules first, then create the interface
+    Mautic.postmarkLoadModules(function(modules) {
+        if (!modules || Object.keys(modules).length === 0) {
+            customContainer.html('<div class="alert alert-warning">No modules available for mapping</div>');
+            return;
+        }
+
+        // Add some helpful text
+        customContainer.append('<p class="help-block"><i class="fa fa-info-circle"></i> Map each Postmark template variable to a Mautic field</p>');
+
+        // Create a mapping row for each variable
+        variables.forEach(function(variable, index) {
+            var row = Mautic.postmarkCreateMappingRow(variable, index, modules, fieldNamePrefix);
+            customContainer.append(row);
+        });
+    });
+};
+
+// Load available modules via AJAX
+Mautic.postmarkLoadModules = function(callback) {
+    mQuery.ajax({
+        url: mauticAjaxUrl + '?action=plugin:postmark:getModules',
+        type: 'POST',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success && response.modules) {
+                callback(response.modules);
+            } else {
+                callback({});
+            }
+        },
+        error: function() {
+            callback({});
+        }
+    });
+};
+
+// Create a single mapping row for a variable
+Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePrefix) {
+    var row = mQuery('<div class="postmark-mapping-row"></div>');
+
+    // Variable name (read-only display)
+    var variableLabel = mQuery('<div class="form-group" style="margin-bottom: 10px;"></div>');
+    variableLabel.append('<label class="control-label" style="font-weight: bold;">Template Variable</label>');
+    variableLabel.append('<div class="input-group"><span class="input-group-addon"><i class="fa fa-code"></i></span><input type="text" class="form-control" value="{{' + variable + '}}" readonly style="background: #fff; cursor: not-allowed;"></div>');
+    row.append(variableLabel);
+
+    // Module dropdown
+    var moduleGroup = mQuery('<div class="form-group" style="margin-bottom: 10px;"></div>');
+    moduleGroup.append('<label class="control-label">Module</label>');
+
+    var moduleSelect = mQuery('<select class="form-control postmark-module-select" data-variable="' + variable + '" data-index="' + index + '"></select>');
+    moduleSelect.append('<option value="">-- Select Module --</option>');
+
+    mQuery.each(modules, function(moduleKey, moduleName) {
+        moduleSelect.append('<option value="' + moduleKey + '">' + moduleName + '</option>');
+    });
+
+    moduleGroup.append(moduleSelect);
+    row.append(moduleGroup);
+
+    // Field dropdown (initially empty)
+    var fieldGroup = mQuery('<div class="form-group" style="margin-bottom: 0;"></div>');
+    fieldGroup.append('<label class="control-label">Field</label>');
+
+    var fieldSelect = mQuery('<select class="form-control postmark-field-select" data-variable="' + variable + '" data-index="' + index + '" disabled></select>');
+    fieldSelect.append('<option value="">-- Select Module First --</option>');
+
+    fieldGroup.append(fieldSelect);
+    row.append(fieldGroup);
+
+    // Add hidden inputs to store the mapping (for form submission)
+    // Use the dynamic field name prefix
+    var hiddenInputs = mQuery('<div style="display:none;"></div>');
+    hiddenInputs.append('<input type="hidden" class="postmark-hidden-variable" name="' + fieldNamePrefix + '[list][' + index + '][label]" value="' + variable + '">');
+    hiddenInputs.append('<input type="hidden" class="postmark-hidden-module" name="' + fieldNamePrefix + '[list][' + index + '][module]" value="">');
+    hiddenInputs.append('<input type="hidden" class="postmark-hidden-field" name="' + fieldNamePrefix + '[list][' + index + '][value]" value="">');
+    row.append(hiddenInputs);
+
+    // Add event handler for module selection
+    moduleSelect.on('change', function() {
+        var selectedModule = mQuery(this).val();
+        var relatedFieldSelect = row.find('.postmark-field-select');
+        var hiddenModule = row.find('.postmark-hidden-module');
+        var hiddenField = row.find('.postmark-hidden-field');
+
+        // Update hidden module input
+        hiddenModule.val(selectedModule);
+
+        if (!selectedModule) {
+            relatedFieldSelect.empty().append('<option value="">-- Select Module First --</option>').prop('disabled', true);
+            hiddenField.val('');
+            return;
+        }
+
+        // Load fields for selected module
+        Mautic.postmarkLoadModuleFields(selectedModule, relatedFieldSelect, hiddenField);
+    });
+
+    // Add event handler for field selection
+    fieldSelect.on('change', function() {
+        var selectedField = mQuery(this).val();
+        var hiddenField = row.find('.postmark-hidden-field');
+        hiddenField.val(selectedField);
+    });
+
+    return row;
+};
+
+// Load fields for a selected module
+Mautic.postmarkLoadModuleFields = function(module, fieldSelect, hiddenField) {
+    console.log('Postmark JS: Loading fields for module:', module);
+
+    // Show loading state
+    fieldSelect.empty().append('<option value="">Loading fields...</option>').prop('disabled', true);
+    hiddenField.val('');
+
+    mQuery.ajax({
+        url: mauticAjaxUrl + '?action=plugin:postmark:getModuleFields',
+        type: 'POST',
+        data: {
+            module: module
+        },
+        dataType: 'json',
+        success: function(response) {
+            console.log('Postmark JS: Got response:', response);
+            console.log('Postmark JS: response.success =', response.success);
+            console.log('Postmark JS: response.fields =', response.fields);
+            console.log('Postmark JS: Field count =', response.fields ? Object.keys(response.fields).length : 0);
+
+            fieldSelect.empty().prop('disabled', false);
+
+            if (response.success && response.fields && Object.keys(response.fields).length > 0) {
+                console.log('Postmark JS: Adding ' + Object.keys(response.fields).length + ' fields to dropdown');
+                fieldSelect.append('<option value="">-- Select Field --</option>');
+
+                mQuery.each(response.fields, function(fieldAlias, fieldLabel) {
+                    fieldSelect.append('<option value="' + fieldAlias + '">' + fieldLabel + '</option>');
+                });
+            } else {
+                console.log('Postmark JS: No fields found, showing message');
+                var message = response.message || 'No fields found for this module';
+                fieldSelect.append('<option value="">' + message + '</option>');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Postmark JS: AJAX error:', status, error);
+            fieldSelect.empty().prop('disabled', false);
+            fieldSelect.append('<option value="">Error loading fields</option>');
+        }
     });
 };

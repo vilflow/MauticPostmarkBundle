@@ -25,5 +25,8 @@ return [
         'js' => [
             'plugins/MauticPostmarkBundle/Assets/js/postmark.js',
         ],
+        'css' => [
+            'plugins/MauticPostmarkBundle/Assets/css/postmark.css',
+        ],
     ],
 ];
