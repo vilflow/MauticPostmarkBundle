@@ -188,8 +188,18 @@ Mautic.postmarkPopulateTemplateModel = function(form, variables) {
 
     console.log('Postmark: Form group found:', formGroup.length);
 
-    // CLEAR EXISTING VARIABLES FIRST
+    // CLEAR EXISTING VARIABLES FIRST to avoid input conflicts
+    console.log('Postmark: Clearing existing template model');
     Mautic.postmarkClearTemplateModel(formGroup);
+
+    // Also clear the sortable list items themselves
+    sortableList.find('.sortable').remove();
+
+    // Update the item counter to 0
+    var itemCounter = formGroup.find('.sortable-itemcount, input[name*="itemcount"]');
+    if (itemCounter.length > 0) {
+        itemCounter.val('0');
+    }
 
     // Hide the sortable list and its controls
     console.log('Postmark: Hiding sortable list and controls');
@@ -238,6 +248,14 @@ Mautic.postmarkCreateVariableMappingInterface = function(templateModelContainer,
         templateModelContainer.append(customContainer);
     } else {
         customContainer.empty();
+    }
+
+    // Add a hidden itemcount field that Mautic expects
+    var itemCountField = templateModelContainer.find('input[name*="itemcount"]');
+    if (!itemCountField.length) {
+        customContainer.append('<input type="hidden" name="' + fieldNamePrefix + '[itemcount]" value="' + variables.length + '" class="postmark-itemcount">');
+    } else {
+        itemCountField.val(variables.length);
     }
 
     // Load modules first, then create the interface
@@ -315,7 +333,6 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
     // Use the dynamic field name prefix
     var hiddenInputs = mQuery('<div style="display:none;"></div>');
     hiddenInputs.append('<input type="hidden" class="postmark-hidden-variable" name="' + fieldNamePrefix + '[list][' + index + '][label]" value="' + variable + '">');
-    hiddenInputs.append('<input type="hidden" class="postmark-hidden-module" name="' + fieldNamePrefix + '[list][' + index + '][module]" value="">');
     hiddenInputs.append('<input type="hidden" class="postmark-hidden-field" name="' + fieldNamePrefix + '[list][' + index + '][value]" value="">');
     row.append(hiddenInputs);
 
@@ -323,11 +340,7 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
     moduleSelect.on('change', function() {
         var selectedModule = mQuery(this).val();
         var relatedFieldSelect = row.find('.postmark-field-select');
-        var hiddenModule = row.find('.postmark-hidden-module');
         var hiddenField = row.find('.postmark-hidden-field');
-
-        // Update hidden module input
-        hiddenModule.val(selectedModule);
 
         if (!selectedModule) {
             relatedFieldSelect.empty().append('<option value="">-- Select Module First --</option>').prop('disabled', true);
@@ -342,8 +355,15 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
     // Add event handler for field selection
     fieldSelect.on('change', function() {
         var selectedField = mQuery(this).val();
+        var selectedModule = row.find('.postmark-module-select').val();
         var hiddenField = row.find('.postmark-hidden-field');
-        hiddenField.val(selectedField);
+
+        // Store in format "module:field" so we can restore it later
+        if (selectedField && selectedModule) {
+            hiddenField.val(selectedModule + ':' + selectedField);
+        } else {
+            hiddenField.val('');
+        }
     });
 
     return row;
@@ -392,3 +412,361 @@ Mautic.postmarkLoadModuleFields = function(module, fieldSelect, hiddenField) {
         }
     });
 };
+
+// Initialize the custom interface on page load if there's existing data
+Mautic.postmarkInitializeOnLoad = function() {
+    console.log('Postmark: Checking for existing template model data on page load');
+
+    // Look for the sortable list in the Postmark form
+    var sortableList = mQuery('.list-sortable[id*="template_model"]');
+
+    if (!sortableList.length) {
+        console.log('Postmark: No sortable list found');
+        return;
+    }
+
+    // Check if already initialized (has our custom container)
+    var formGroup = sortableList.closest('.form-group');
+    if (!formGroup.length) {
+        formGroup = sortableList.parent();
+    }
+
+    if (formGroup.find('.postmark-variable-mapping').length) {
+        console.log('Postmark: Already initialized, skipping');
+        return;
+    }
+
+    // Check if sortable list is already hidden
+    if (sortableList.is(':hidden')) {
+        console.log('Postmark: Sortable list already hidden, skipping');
+        return;
+    }
+
+    // Check if it has any existing items (saved data)
+    var existingItems = sortableList.find('.sortable');
+
+    if (!existingItems.length) {
+        console.log('Postmark: No existing items found');
+        return;
+    }
+
+    console.log('Postmark: Found ' + existingItems.length + ' existing items, converting to custom interface');
+
+    // Extract the saved variables and their mappings
+    var savedMappings = [];
+    existingItems.each(function() {
+        var item = mQuery(this);
+        var label = item.find('.sortable-label').val(); // Variable name
+        var value = item.find('.sortable-value').val(); // Module field (or module:field format)
+
+        if (label) {
+            savedMappings.push({
+                variable: label,
+                value: value
+            });
+        }
+    });
+
+    console.log('Postmark: Extracted saved mappings:', savedMappings);
+
+    // Find the form and sortable list container
+    var form = sortableList.closest('form');
+    var formGroup = sortableList.closest('.form-group');
+    if (!formGroup.length) {
+        formGroup = sortableList.parent();
+    }
+
+    // Get field name prefix
+    var fieldNamePrefix = Mautic.postmarkGetFieldNamePrefix(sortableList);
+    console.log('Postmark: Field name prefix:', fieldNamePrefix);
+
+    // IMPORTANT: Clear the sortable list items to avoid input conflicts
+    console.log('Postmark: Clearing old sortable list items');
+    sortableList.find('.sortable').remove();
+
+    // Update the item counter to 0
+    var itemCounter = formGroup.find('.sortable-itemcount, input[name*="itemcount"]');
+    if (itemCounter.length > 0) {
+        itemCounter.val('0');
+    }
+
+    // Hide the sortable list and add button
+    sortableList.hide();
+    formGroup.find('.btn-add-item').hide();
+
+    // Create custom interface with saved data
+    Mautic.postmarkCreateVariableMappingInterfaceWithData(formGroup, savedMappings, fieldNamePrefix);
+
+    // Hook into form submission to ensure data is properly formatted
+    var campaignForm = formGroup.closest('form');
+    if (campaignForm.length) {
+        console.log('Postmark: Setting up form submit handler');
+        campaignForm.off('submit.postmark').on('submit.postmark', function(e) {
+            console.log('Postmark: Form submitting, checking hidden inputs');
+
+            // Set flag to prevent reinitialization during submission
+            window.postmarkFormSubmitting = true;
+            console.log('Postmark: Set formSubmitting flag to true');
+
+            // Log all our hidden inputs to see what's being submitted
+            var hiddenInputs = formGroup.find('.postmark-hidden-variable, .postmark-hidden-field');
+            console.log('Postmark: Found ' + hiddenInputs.length + ' hidden inputs');
+
+            hiddenInputs.each(function() {
+                var input = mQuery(this);
+                console.log('  - ' + input.attr('name') + ' = ' + input.val());
+            });
+
+            // Check if itemcount is set
+            var itemCount = formGroup.find('input[name*="itemcount"]');
+            console.log('Postmark: Itemcount value:', itemCount.val());
+
+            // Reset flag after a delay to allow modal to close
+            setTimeout(function() {
+                window.postmarkFormSubmitting = false;
+                console.log('Postmark: Reset formSubmitting flag to false');
+            }, 3000);
+
+            // Let the form submit normally
+            return true;
+        });
+    }
+};
+
+// Create variable mapping interface with pre-populated data
+Mautic.postmarkCreateVariableMappingInterfaceWithData = function(templateModelContainer, savedMappings, fieldNamePrefix) {
+    // Create or clear our custom container
+    var customContainer = templateModelContainer.find('.postmark-variable-mapping');
+    if (!customContainer.length) {
+        customContainer = mQuery('<div class="postmark-variable-mapping"></div>');
+        templateModelContainer.append(customContainer);
+    } else {
+        customContainer.empty();
+    }
+
+    // Add a hidden itemcount field that Mautic expects
+    var itemCountField = templateModelContainer.find('input[name*="itemcount"]');
+    if (!itemCountField.length) {
+        customContainer.append('<input type="hidden" name="' + fieldNamePrefix + '[itemcount]" value="' + savedMappings.length + '" class="postmark-itemcount">');
+    } else {
+        itemCountField.val(savedMappings.length);
+    }
+
+    // Load modules first, then create the interface with saved data
+    Mautic.postmarkLoadModules(function(modules) {
+        if (!modules || Object.keys(modules).length === 0) {
+            customContainer.html('<div class="alert alert-warning">No modules available for mapping</div>');
+            return;
+        }
+
+        // Add helpful text
+        customContainer.append('<p class="help-block"><i class="fa fa-info-circle"></i> Map each Postmark template variable to a Mautic field</p>');
+
+        // Create a mapping row for each saved variable
+        savedMappings.forEach(function(mapping, index) {
+            console.log('Postmark: Creating row for variable:', mapping.variable, 'with value:', mapping.value);
+
+            // Parse the saved value to extract module and field
+            // Format can be "fieldName" or we need to detect the module
+            var savedModule = '';
+            var savedField = mapping.value;
+
+            var row = Mautic.postmarkCreateMappingRow(mapping.variable, index, modules, fieldNamePrefix);
+            customContainer.append(row);
+
+            // Pre-select saved values if available
+            if (savedField) {
+                // Try to determine module from field name
+                // For now, we'll need to load fields and see which module contains this field
+                Mautic.postmarkPreSelectSavedMapping(row, savedModule, savedField);
+            }
+        });
+
+        console.log('Postmark: Created interface with ' + savedMappings.length + ' mappings');
+    });
+};
+
+// Pre-select saved module and field in a mapping row
+Mautic.postmarkPreSelectSavedMapping = function(row, savedModule, savedValue) {
+    console.log('Postmark: Trying to pre-select savedValue:', savedValue);
+
+    var moduleSelect = row.find('.postmark-module-select');
+    var fieldSelect = row.find('.postmark-field-select');
+    var hiddenField = row.find('.postmark-hidden-field');
+
+    // Parse the saved value - could be "module:field" or just "field"
+    var module = savedModule;
+    var field = savedValue;
+
+    if (savedValue && savedValue.indexOf(':') > 0) {
+        var parts = savedValue.split(':');
+        module = parts[0];
+        field = parts[1];
+    }
+
+    console.log('Postmark: Parsed module:', module, 'field:', field);
+
+    if (module) {
+        // Set the module dropdown
+        moduleSelect.val(module);
+
+        // Load fields for this module
+        fieldSelect.prop('disabled', true);
+        fieldSelect.empty().append('<option value="">Loading fields...</option>');
+
+        mQuery.ajax({
+            url: mauticAjaxUrl + '?action=plugin:postmark:getModuleFields',
+            type: 'POST',
+            data: { module: module },
+            dataType: 'json',
+            success: function(response) {
+                fieldSelect.empty().prop('disabled', false);
+
+                if (response.success && response.fields) {
+                    fieldSelect.append('<option value="">-- Select Field --</option>');
+
+                    mQuery.each(response.fields, function(fieldAlias, fieldLabel) {
+                        fieldSelect.append('<option value="' + fieldAlias + '">' + fieldLabel + '</option>');
+                    });
+
+                    // Pre-select the saved field
+                    if (field) {
+                        fieldSelect.val(field);
+                        hiddenField.val(module + ':' + field);
+                    }
+                } else {
+                    fieldSelect.append('<option value="">No fields found</option>');
+                }
+            },
+            error: function() {
+                fieldSelect.prop('disabled', false);
+                fieldSelect.append('<option value="">Error loading fields</option>');
+            }
+        });
+    } else if (savedValue) {
+        // No module info, just show the raw saved value
+        var noteHtml = '<div class="alert alert-info" style="margin-top: 10px; margin-bottom: 0;">' +
+            '<i class="fa fa-info-circle"></i> Saved value: <strong>' + savedValue + '</strong><br>' +
+            '<small>Please select the module and field to update this mapping.</small>' +
+            '</div>';
+        row.find('.form-group').last().after(noteHtml);
+        hiddenField.val(savedValue);
+    }
+};
+
+// Retry checking for sortable list with exponential backoff
+Mautic.postmarkWaitForSortableList = function(retries, maxRetries) {
+    retries = retries || 0;
+    maxRetries = maxRetries || 10;
+
+    var sortableList = mQuery('.list-sortable[id*="template_model"]');
+
+    if (sortableList.length && sortableList.find('.sortable').length) {
+        console.log('Postmark: Found sortable list with data after ' + retries + ' retries');
+        Mautic.postmarkInitializeOnLoad();
+    } else if (retries < maxRetries) {
+        var delay = Math.min(100 * Math.pow(1.5, retries), 2000); // Max 2 seconds
+        console.log('Postmark: Retry ' + (retries + 1) + '/' + maxRetries + ' in ' + delay + 'ms');
+        setTimeout(function() {
+            Mautic.postmarkWaitForSortableList(retries + 1, maxRetries);
+        }, delay);
+    } else {
+        console.log('Postmark: Max retries reached, sortable list not found');
+    }
+};
+
+// Run initialization when document is ready
+mQuery(document).ready(function() {
+    console.log('Postmark: Document ready, setting up event listeners');
+
+    // Flag to prevent reinitialization during form submission
+    window.postmarkFormSubmitting = false;
+
+    // Initial check with delay
+    setTimeout(function() {
+        Mautic.postmarkInitializeOnLoad();
+    }, 500);
+
+    // Listen for Mautic modal/builder events
+    if (typeof Mautic !== 'undefined') {
+        // Use MutationObserver for better DOM monitoring
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.addedNodes.length) {
+                    mQuery(mutation.addedNodes).each(function() {
+                        var node = mQuery(this);
+
+                        // Check if this is our sortable list or contains it
+                        if (node.is('.list-sortable[id*="template_model"]') ||
+                            node.find('.list-sortable[id*="template_model"]').length) {
+
+                            // Don't reinitialize if we're in the middle of form submission
+                            if (window.postmarkFormSubmitting) {
+                                console.log('Postmark: Sortable list detected but form is submitting, skipping initialization');
+                                return;
+                            }
+
+                            console.log('Postmark: Detected sortable list in DOM, initializing');
+                            setTimeout(function() {
+                                Mautic.postmarkInitializeOnLoad();
+                            }, 200);
+                        }
+                    });
+                }
+            });
+        });
+
+        // Start observing the document for changes
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // When modal is shown, start retry mechanism
+        mQuery(document).on('shown.bs.modal', '.modal', function() {
+            console.log('Postmark: Modal shown, starting retry mechanism');
+            // Reset the flag when a new modal opens
+            window.postmarkFormSubmitting = false;
+            setTimeout(function() {
+                Mautic.postmarkWaitForSortableList(0, 10);
+            }, 300);
+        });
+
+        // When modal is hidden/closed, reset the flag
+        mQuery(document).on('hidden.bs.modal', '.modal', function() {
+            console.log('Postmark: Modal closed, resetting formSubmitting flag');
+            window.postmarkFormSubmitting = false;
+        });
+
+        // Listen for AJAX complete to check for errors
+        mQuery(document).ajaxComplete(function(event, xhr, settings) {
+            // Check if this is a campaign event form submission
+            if (settings.url && settings.url.indexOf('campaignevent') >= 0) {
+                console.log('Postmark: AJAX complete for campaign event');
+                console.log('Postmark: Status:', xhr.status);
+
+                try {
+                    var response = JSON.parse(xhr.responseText);
+                    console.log('Postmark: Response:', response);
+
+                    if (response.errors || response.error) {
+                        console.error('Postmark: Form submission errors:', response.errors || response.error);
+                    }
+                } catch(e) {
+                    // Not JSON, ignore
+                }
+
+                // Check for error messages in the modal
+                setTimeout(function() {
+                    var errorMessages = mQuery('.modal .alert-danger, .modal .has-error');
+                    if (errorMessages.length) {
+                        console.error('Postmark: Found ' + errorMessages.length + ' error messages in modal');
+                        errorMessages.each(function() {
+                            console.error('  - Error:', mQuery(this).text().trim());
+                        });
+                    }
+                }, 500);
+            }
+        });
+    }
+});

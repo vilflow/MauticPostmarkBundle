@@ -100,6 +100,7 @@ class PostmarkSendType extends AbstractType
             ->add('to_email', TextType::class, [
                 'label'       => 'mautic.postmark.form.to_email',
                 'required'    => true,
+                'data'        => '{contactfield=email}',
                 'constraints' => [
                     new NotBlank(['message' => 'mautic.postmark.form.to_email.required']),
                 ],
