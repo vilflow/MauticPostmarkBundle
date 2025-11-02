@@ -250,12 +250,12 @@ Mautic.postmarkCreateVariableMappingInterface = function(templateModelContainer,
         customContainer.empty();
     }
 
-    // Add a hidden itemcount field that Mautic expects
-    var itemCountField = templateModelContainer.find('input[name*="itemcount"]');
-    if (!itemCountField.length) {
-        customContainer.append('<input type="hidden" name="' + fieldNamePrefix + '[itemcount]" value="' + variables.length + '" class="postmark-itemcount">');
-    } else {
+    // Update the existing sortable item counter without adding new named inputs
+    var itemCountField = templateModelContainer.find('.sortable-itemcount');
+    if (itemCountField.length) {
         itemCountField.val(variables.length);
+    } else {
+        customContainer.append('<input type="hidden" class="sortable-itemcount postmark-itemcount" value="' + variables.length + '">');
     }
 
     // Load modules first, then create the interface
@@ -544,12 +544,12 @@ Mautic.postmarkCreateVariableMappingInterfaceWithData = function(templateModelCo
         customContainer.empty();
     }
 
-    // Add a hidden itemcount field that Mautic expects
-    var itemCountField = templateModelContainer.find('input[name*="itemcount"]');
-    if (!itemCountField.length) {
-        customContainer.append('<input type="hidden" name="' + fieldNamePrefix + '[itemcount]" value="' + savedMappings.length + '" class="postmark-itemcount">');
-    } else {
+    // Update the existing sortable item counter without adding new named inputs
+    var itemCountField = templateModelContainer.find('.sortable-itemcount');
+    if (itemCountField.length) {
         itemCountField.val(savedMappings.length);
+    } else {
+        customContainer.append('<input type="hidden" class="sortable-itemcount postmark-itemcount" value="' + savedMappings.length + '">');
     }
 
     // Load modules first, then create the interface with saved data
