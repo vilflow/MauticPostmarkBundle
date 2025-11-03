@@ -475,13 +475,20 @@ class CampaignSubscriber implements EventSubscriberInterface
                     continue;
                 }
 
-                // Resolve tokens with opportunity context
+                // Load related Event entity for token resolution
+                $additionalEntities = [];
+                if ($opportunity->getEvent()) {
+                    $additionalEntities[] = $opportunity->getEvent();
+                }
+
+                // Resolve tokens with opportunity AND event context
                 [$from, $to, $model] = $this->resolveTokensWithEntity(
                     $fromEmail,
                     $toEmail,
                     $templateModel,
                     $contact,
-                    $opportunity
+                    $opportunity,
+                    $additionalEntities
                 );
 
                 // Validate required fields
@@ -603,13 +610,20 @@ class CampaignSubscriber implements EventSubscriberInterface
                     continue;
                 }
 
-                // Resolve tokens with note context
+                // Load related Event entity for token resolution
+                $additionalEntities = [];
+                if ($note->getEvent()) {
+                    $additionalEntities[] = $note->getEvent();
+                }
+
+                // Resolve tokens with note AND event context
                 [$from, $to, $model] = $this->resolveTokensWithEntity(
                     $fromEmail,
                     $toEmail,
                     $templateModel,
                     $contact,
-                    $note
+                    $note,
+                    $additionalEntities
                 );
 
                 // Validate required fields
@@ -1001,26 +1015,32 @@ class CampaignSubscriber implements EventSubscriberInterface
         string $to,
         array $templateModel,
         Lead $contact,
-        ?object $entity = null
+        ?object $entity = null,
+        array $additionalEntities = []
     ): array {
         $profileFields = $contact->getProfileFields();
 
-        
+        // Merge entity with additionalEntities
+        $allEntities = [];
+        if ($entity) {
+            $allEntities[] = $entity;
+        }
+        $allEntities = array_merge($allEntities, $additionalEntities);
 
-        $from = $this->resolveTemplateValue($from, $contact, $profileFields, $entity);
-        $to   = $this->resolveTemplateValue($to, $contact, $profileFields, $entity);
+        $from = $this->resolveTemplateValue($from, $contact, $profileFields, $allEntities);
+        $to   = $this->resolveTemplateValue($to, $contact, $profileFields, $allEntities);
 
         $resolvedModel = [];
         foreach ($templateModel as $key => $value) {
             $resolvedModel[$key] = is_string($value)
-                ? $this->resolveTemplateValue($value, $contact, $profileFields, $entity)
+                ? $this->resolveTemplateValue($value, $contact, $profileFields, $allEntities)
                 : $value;
         }
 
         return [$from, $to, $resolvedModel];
     }
 
-    private function resolveTemplateValue(string $value, Lead $contact, array $profileFields, ?object $entity = null): string
+    private function resolveTemplateValue(string $value, Lead $contact, array $profileFields, array $entities = []): string
     {
         $resolved = preg_replace_callback(
             '/\{contactfield=([^}]+)\}/i',
@@ -1035,9 +1055,19 @@ class CampaignSubscriber implements EventSubscriberInterface
             $resolved = $value;
         }
 
-        $resolved = $this->replaceEntityFieldTokens($resolved, $entity);
+        $resolved = $this->replaceAllEntityFieldTokens($resolved, $entities);
 
-        return $this->resolveModuleReference($resolved, $contact, $profileFields, $entity);
+        return $this->resolveModuleReference($resolved, $contact, $profileFields, $entities);
+    }
+
+    private function replaceAllEntityFieldTokens(string $value, array $entities): string
+    {
+        // Replace tokens for each entity type
+        foreach ($entities as $entity) {
+            $value = $this->replaceEntityFieldTokens($value, $entity);
+        }
+
+        return $value;
     }
 
     private function replaceEntityFieldTokens(string $value, ?object $entity): string
@@ -1090,7 +1120,7 @@ class CampaignSubscriber implements EventSubscriberInterface
         string $value,
         Lead $contact,
         array $profileFields,
-        ?object $entity = null
+        array $entities = []
     ): string {
         $trimmed = trim($value);
 
@@ -1098,7 +1128,7 @@ class CampaignSubscriber implements EventSubscriberInterface
             $module = strtolower($matches['module']);
             $field  = $matches['field'];
 
-            $resolved = $this->resolveModuleFieldValue($module, $field, $contact, $profileFields, $entity);
+            $resolved = $this->resolveModuleFieldValue($module, $field, $contact, $profileFields, $entities);
 
             return $resolved;
         }
@@ -1111,12 +1141,8 @@ class CampaignSubscriber implements EventSubscriberInterface
         string $field,
         Lead $contact,
         array $profileFields,
-        ?object $entity = null
+        array $entities = []
     ): string {
-        // Temporary debug log
-        error_log(sprintf('[Postmark Debug] resolveModuleFieldValue: module=%s, field=%s, entity=%s',
-            $module, $field, $entity ? get_class($entity) : 'NULL'));
-
         switch ($module) {
             case 'lead':
             case 'contact':
@@ -1148,27 +1174,30 @@ class CampaignSubscriber implements EventSubscriberInterface
                 return '';
 
             case 'event':
-                if ($entity instanceof Event) {
-                    $value = $this->extractPropertyValue($entity, $field);
-                    error_log(sprintf('[Postmark Debug] Extracted event.%s = %s', $field, $value));
-                    return $value;
+                // Search for Event entity in entities array
+                foreach ($entities as $entity) {
+                    if ($entity instanceof Event) {
+                        return $this->extractPropertyValue($entity, $field);
+                    }
                 }
-
-                error_log('[Postmark Debug] Entity is NOT an Event instance!');
                 return '';
 
             case 'opportunity':
-                if ($entity instanceof Opportunity) {
-                    return $this->extractPropertyValue($entity, $field);
+                // Search for Opportunity entity in entities array
+                foreach ($entities as $entity) {
+                    if ($entity instanceof Opportunity) {
+                        return $this->extractPropertyValue($entity, $field);
+                    }
                 }
-
                 return '';
 
             case 'note':
-                if ($entity instanceof Note) {
-                    return $this->extractPropertyValue($entity, $field);
+                // Search for Note entity in entities array
+                foreach ($entities as $entity) {
+                    if ($entity instanceof Note) {
+                        return $this->extractPropertyValue($entity, $field);
+                    }
                 }
-
                 return '';
 
             default:
