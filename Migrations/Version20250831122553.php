@@ -2,31 +2,33 @@
 
 declare(strict_types=1);
 
-namespace MauticPlugin\MauticPostmarkBundle\Migration;
+namespace MauticPlugin\MauticPostmarkBundle\Migrations;
 
 use Doctrine\DBAL\Schema\Schema;
-use Mautic\CoreBundle\Doctrine\PreUpAssertionMigration;
+use Mautic\IntegrationsBundle\Migration\AbstractMigration;
 
 /**
  * Add Postmark tracking columns to campaign_lead_event_log.
  */
-class Version20250831122553 extends PreUpAssertionMigration
+class Version20250831122553 extends AbstractMigration
 {
-    protected function preUpAssertions(): void
+    protected function isApplicable(Schema $schema): bool
     {
-        // Skip if columns already exist (assume presence of postmark_message_id is enough)
-        $this->skipAssertion(
-            function (Schema $schema) {
-                return $schema->getTable("{$this->prefix}campaign_lead_event_log")->hasColumn('postmark_message_id');
-            },
-            'Postmark columns already present.'
-        );
+        $tableName = $this->concatPrefix('campaign_lead_event_log');
+
+        if (!$schema->hasTable($tableName)) {
+            return false;
+        }
+
+        return !$schema->getTable($tableName)->hasColumn('postmark_message_id');
     }
 
-    public function up(Schema $schema): void
+    protected function up(): void
     {
+        $table = $this->concatPrefix('campaign_lead_event_log');
+
         $this->addSql(<<<SQL
-ALTER TABLE {$this->prefix}campaign_lead_event_log
+ALTER TABLE {$table}
 ADD postmark_message_id CHAR(36) NULL,
 ADD suitecrm_email_id CHAR(36) NULL,
 ADD postmark_delivery_status VARCHAR(32) NULL,

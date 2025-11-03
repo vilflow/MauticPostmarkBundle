@@ -3,7 +3,7 @@
 return [
     'name'        => 'Postmark Campaign Action',
     'description' => 'Adds a campaign action to send emails via Postmark API with templates.',
-    'version'     => '1.0.0',
+    'version'     => '1.1.0',
     'author'      => 'Your Team',
     'routes'      => [
         'public' => [

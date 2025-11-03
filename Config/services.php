@@ -3,8 +3,12 @@
 declare(strict_types=1);
 
 use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
+use MauticPlugin\MauticPostmarkBundle\Service\EventCriteriaBuilder;
+use MauticPlugin\MauticPostmarkBundle\Service\NoteCriteriaBuilder;
+use MauticPlugin\MauticPostmarkBundle\Service\OpportunityCriteriaBuilder;
 use MauticPlugin\MauticPostmarkBundle\Service\SuiteCRMService;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 return function (ContainerConfigurator $configurator): void {
     $services = $configurator->services()
@@ -14,6 +18,7 @@ return function (ContainerConfigurator $configurator): void {
         ->public();
 
     $excludes = [
+        'EventListener', // Exclude EventListeners from auto-loading (we register them manually)
     ];
 
     $services->load('MauticPlugin\\MauticPostmarkBundle\\', '../')
@@ -34,4 +39,29 @@ return function (ContainerConfigurator $configurator): void {
         ->arg('$suitecrm_username', $suitecrm_username)
         ->arg('$suitecrm_password', $suitecrm_password)
         ->public();
+
+    // Register Criteria Builders
+    $services->set('mautic.postmark.criteria_builder.event', EventCriteriaBuilder::class)
+        ->arg('$em', service('doctrine.orm.entity_manager'))
+        ->public();
+
+    $services->set('mautic.postmark.criteria_builder.opportunity', OpportunityCriteriaBuilder::class)
+        ->arg('$em', service('doctrine.orm.entity_manager'))
+        ->public();
+
+    $services->set('mautic.postmark.criteria_builder.note', NoteCriteriaBuilder::class)
+        ->arg('$em', service('doctrine.orm.entity_manager'))
+        ->public();
+
+    // Update CampaignSubscriber to receive EntityManager and CriteriaBuilders
+    $services->set('mautic.postmark.campaign.subscriber')
+        ->class(\MauticPlugin\MauticPostmarkBundle\EventListener\CampaignSubscriber::class)
+        ->arg('$connection', service('database_connection'))
+        ->arg('$suiteCRMService', service(SuiteCRMService::class))
+        ->arg('$logger', service('monolog.logger.mautic'))
+        ->arg('$em', service('doctrine.orm.entity_manager'))
+        ->arg('$eventCriteriaBuilder', service('mautic.postmark.criteria_builder.event'))
+        ->arg('$opportunityCriteriaBuilder', service('mautic.postmark.criteria_builder.opportunity'))
+        ->arg('$noteCriteriaBuilder', service('mautic.postmark.criteria_builder.note'))
+        ->tag('kernel.event_subscriber');
 };

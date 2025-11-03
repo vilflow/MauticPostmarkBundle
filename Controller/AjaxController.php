@@ -83,6 +83,14 @@ class AjaxController extends BaseAjaxController
             return $this->sendJsonResponse($dataArray);
 
         } catch (\Exception $e) {
+            $logFile = dirname(__DIR__) . '/postmark_error.log';
+            $logLine = sprintf(
+                "[%s] getTemplateVariablesAction error: %s%s",
+                (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                $e->getMessage(),
+                PHP_EOL
+            );
+            @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
             $dataArray['message'] = 'Error fetching template variables: ' . $e->getMessage();
             return $this->sendJsonResponse($dataArray);
         }

@@ -8,6 +8,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\PasswordType;
+use Symfony\Component\Form\Extension\Core\Type\RadioType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -32,7 +33,36 @@ class PostmarkSendType extends AbstractType
     {
         // Get account token from environment
         $envAccountToken = $this->getAccountTokenFromEnv();
-        
+
+        // Get existing data to preserve saved values
+        $existingData = $builder->getData();
+        $currentMode = $existingData['mode'] ?? 'contact'; // Default to 'contact' only if not set
+
+        // Mode selector for per-entity sends
+        $builder
+            ->add('mode', ChoiceType::class, [
+                'label'       => 'mautic.postmark.form.mode',
+                'required'    => true,
+                'data'        => $currentMode, // Use saved value or default
+                'choices'     => [
+                    'mautic.postmark.form.mode.contact'     => 'contact',
+                    'mautic.postmark.form.mode.event'       => 'event',
+                    'mautic.postmark.form.mode.opportunity' => 'opportunity',
+                    'mautic.postmark.form.mode.note'        => 'note',
+                ],
+                'expanded'    => true, // Render as radio buttons
+                'multiple'    => false,
+                'attr'        => [
+                    'class'           => 'form-control postmark-mode-selector',
+                    'data-toggle'     => 'tooltip',
+                    'data-placement'  => 'top',
+                    'title'           => 'mautic.postmark.form.mode.tooltip',
+                ],
+                'label_attr'  => [
+                    'class' => 'control-label',
+                ],
+            ]);
+
         // Authentication & Configuration Section
         // $builder
         //     ->add('account_token', PasswordType::class, [
