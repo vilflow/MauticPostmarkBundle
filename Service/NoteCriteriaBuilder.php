@@ -15,12 +15,22 @@ use MauticPlugin\MauticPostmarkBundle\DTO\EntityFilterSpec;
 class NoteCriteriaBuilder
 {
     private EntityManagerInterface $em;
-    private NoteRepository $repository;
+    private ?NoteRepository $repository = null;
 
     public function __construct(EntityManagerInterface $em)
     {
         $this->em = $em;
-        $this->repository = $em->getRepository(Note::class);
+    }
+
+    /**
+     * Lazy-load the repository to avoid EntityManager being null during service initialization
+     */
+    private function getRepository(): NoteRepository
+    {
+        if (null === $this->repository) {
+            $this->repository = $this->em->getRepository(Note::class);
+        }
+        return $this->repository;
     }
 
     /**
@@ -35,7 +45,7 @@ class NoteCriteriaBuilder
             throw new \InvalidArgumentException('Spec type must be "note"');
         }
 
-        $qb = $this->repository->createQueryBuilder('n')
+        $qb = $this->getRepository()->createQueryBuilder('n')
             ->where('n.deleted = :deleted')
             ->setParameter('deleted', false);
 

@@ -15,12 +15,22 @@ use MauticPlugin\MauticPostmarkBundle\DTO\EntityFilterSpec;
 class EventCriteriaBuilder
 {
     private EntityManagerInterface $em;
-    private EventRepository $repository;
+    private ?EventRepository $repository = null;
 
     public function __construct(EntityManagerInterface $em)
     {
         $this->em = $em;
-        $this->repository = $em->getRepository(Event::class);
+    }
+
+    /**
+     * Lazy-load the repository to avoid EntityManager being null during service initialization
+     */
+    private function getRepository(): EventRepository
+    {
+        if (null === $this->repository) {
+            $this->repository = $this->em->getRepository(Event::class);
+        }
+        return $this->repository;
     }
 
     /**
@@ -35,7 +45,7 @@ class EventCriteriaBuilder
             throw new \InvalidArgumentException('Spec type must be "event"');
         }
 
-        $qb = $this->repository->createQueryBuilder('e')
+        $qb = $this->getRepository()->createQueryBuilder('e')
             ->where('e.deleted = :deleted')
             ->setParameter('deleted', false);
 

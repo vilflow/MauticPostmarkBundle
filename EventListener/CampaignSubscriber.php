@@ -5,10 +5,11 @@ namespace MauticPlugin\MauticPostmarkBundle\EventListener;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Mautic\CampaignBundle\CampaignEvents;
+use Mautic\CampaignBundle\Entity\Event as CampaignEvent;
 use Mautic\CampaignBundle\Event\CampaignBuilderEvent;
 use Mautic\CampaignBundle\Event\PendingEvent;
 use Mautic\LeadBundle\Entity\Lead;
-use MauticPlugin\MauticEventsBundle\Entity\Event;
+use MauticPlugin\MauticEventsBundle\Entity\Event as CustomEvent;
 use MauticPlugin\MauticNotesBundle\Entity\Note;
 use MauticPlugin\MauticOpportunitiesBundle\Entity\Opportunity;
 use MauticPlugin\MauticPostmarkBundle\DTO\EntityFilterSpec;
@@ -1101,7 +1102,7 @@ class CampaignSubscriber implements EventSubscriberInterface
             return null;
         }
 
-        if ($entity instanceof Event) {
+        if ($entity instanceof CustomEvent) {
             return 'event';
         }
 
@@ -1176,7 +1177,7 @@ class CampaignSubscriber implements EventSubscriberInterface
             case 'event':
                 // Search for Event entity in entities array
                 foreach ($entities as $entity) {
-                    if ($entity instanceof Event) {
+                    if ($entity instanceof CustomEvent) {
                         return $this->extractPropertyValue($entity, $field);
                     }
                 }
@@ -1371,10 +1372,10 @@ class CampaignSubscriber implements EventSubscriberInterface
      * opportunities linked to those events.
      *
      * @param int $contactId
-     * @param \Mautic\CampaignBundle\Entity\Event $actionEvent
+     * @param CampaignEvent $actionEvent
      * @return array Opportunity IDs
      */
-    private function getFilteredOpportunityIdsForContact(int $contactId, $actionEvent): array
+    public function getFilteredOpportunityIdsForContact(int $contactId, CampaignEvent $actionEvent): array
     {
         if (!$this->opportunityCriteriaBuilder) {
             $this->logger->warning('OpportunityCriteriaBuilder not available, returning all opportunities');

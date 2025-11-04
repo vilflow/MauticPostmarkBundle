@@ -64,4 +64,17 @@ return function (ContainerConfigurator $configurator): void {
         ->arg('$opportunityCriteriaBuilder', service('mautic.postmark.criteria_builder.opportunity'))
         ->arg('$noteCriteriaBuilder', service('mautic.postmark.criteria_builder.note'))
         ->tag('kernel.event_subscriber');
+
+    $services->set('mautic.postmark.opportunity.lifecycle_subscriber')
+        ->class(\MauticPlugin\MauticPostmarkBundle\EventListener\OpportunityLifecycleSubscriber::class)
+        ->arg('$campaignSubscriber', service('mautic.postmark.campaign.subscriber'))
+        ->arg('$logger', service('monolog.logger.mautic'))
+        ->tag('doctrine.event_subscriber');
+
+    // Register the reschedule entities command (handles opportunity, note, and event modes)
+    $services->set('mautic.postmark.command.reschedule_entities')
+        ->class(\MauticPlugin\MauticPostmarkBundle\Command\RescheduleEntityActionsCommand::class)
+        ->arg('$connection', service('database_connection'))
+        ->arg('$logger', service('monolog.logger.mautic'))
+        ->tag('console.command');
 };

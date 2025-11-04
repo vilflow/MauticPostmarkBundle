@@ -15,12 +15,22 @@ use MauticPlugin\MauticPostmarkBundle\DTO\EntityFilterSpec;
 class OpportunityCriteriaBuilder
 {
     private EntityManagerInterface $em;
-    private OpportunityRepository $repository;
+    private ?OpportunityRepository $repository = null;
 
     public function __construct(EntityManagerInterface $em)
     {
         $this->em = $em;
-        $this->repository = $em->getRepository(Opportunity::class);
+    }
+
+    /**
+     * Lazy-load the repository to avoid EntityManager being null during service initialization
+     */
+    private function getRepository(): OpportunityRepository
+    {
+        if (null === $this->repository) {
+            $this->repository = $this->em->getRepository(Opportunity::class);
+        }
+        return $this->repository;
     }
 
     /**
@@ -35,7 +45,7 @@ class OpportunityCriteriaBuilder
             throw new \InvalidArgumentException('Spec type must be "opportunity"');
         }
 
-        $qb = $this->repository->createQueryBuilder('o')
+        $qb = $this->getRepository()->createQueryBuilder('o')
             ->where('o.deleted = :deleted')
             ->setParameter('deleted', false);
 
