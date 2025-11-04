@@ -40,24 +40,22 @@
 
 #### Event Subscribers
 - `CampaignSubscriber` - گسترش یافته با:
+  - `sendPerContact()` - ارسال به ازای هر مخاطب (همان رفتار قبلی)
+  - `sendPerEvent()` - ارسال به ازای هر رویداد
   - `sendPerOpportunity()` - ارسال به ازای هر فرصت
   - `sendPerNote()` - ارسال به ازای هر یادداشت
-  - `sendPerContact()` - همان رفتار قبلی
-- `EntityConditionSubscriber` - شرط‌های جدید:
-  - "Has Matching Opportunities"
-  - "Has Matching Notes"
+- `PostmarkConditionSubscriber` - شرط‌های ردیابی ارسال:
+  - "Postmark Email Delivered"
+  - "Postmark Email Opened"
+  - "Postmark Email Clicked"
+  - و غیره
 
 #### Form Types
-- `OpportunityConditionType` - فرم تنظیمات شرط Opportunity
-- `NoteConditionType` - فرم تنظیمات شرط Note
+- `PostmarkSendType` - فرم تنظیمات Action با انتخاب Mode (contact/event/opportunity/note)
 
 ### ۳. رابط کاربری (UI)
 
 #### در Campaign Builder حالا این‌ها را دارید:
-
-**Conditions (شرط‌ها):**
-- ✅ Has Matching Opportunities
-- ✅ Has Matching Notes
 
 **Actions (عملیات‌ها):**
 - ✅ Send Email via Postmark
@@ -373,50 +371,53 @@ WHERE Key_name = 'idx_unique_send';
 
 ## فایل‌های ایجاد شده
 
-### جدید (۱۷ فایل):
+### فایل‌های پیاده‌سازی شده:
+
 ```
-Migrations/
-  └─ Version20251102000000.php (migration دیتابیس)
+✅ Migrations/
+  └─ Version_1_1_0.php (جداول per-entity send)
+  └─ Version20250831122553.php (ستون‌های Postmark tracking)
 
-Entity/
-  ├─ CampaignEntityConditionResult.php
-  ├─ CampaignEntityConditionResultRepository.php
-  ├─ PostmarkEntitySendLog.php
-  └─ PostmarkEntitySendLogRepository.php
+✅ Entity/
+  ├─ CampaignEntityConditionResult.php + Repository
+  └─ PostmarkEntitySendLog.php + Repository
 
-DTO/
+✅ DTO/
   └─ EntityFilterSpec.php
 
-Service/
+✅ Service/
   ├─ OpportunityCriteriaBuilder.php
-  └─ NoteCriteriaBuilder.php
+  ├─ NoteCriteriaBuilder.php
+  ├─ EventCriteriaBuilder.php
+  ├─ SuiteCRMService.php
+  └─ PostmarkApiService.php
 
-EventListener/
-  └─ EntityConditionSubscriber.php
+✅ EventListener/
+  ├─ CampaignSubscriber.php (با ۴ mode کامل)
+  ├─ PostmarkConditionSubscriber.php
+  ├─ OpportunityLifecycleSubscriber.php
+  └─ ReportSubscriber.php
 
-Form/Type/
-  ├─ OpportunityConditionType.php
-  └─ NoteConditionType.php
+✅ Form/Type/
+  └─ PostmarkSendType.php (با انتخاب Mode: contact/event/opportunity/note)
 
-مستندات/
-  ├─ IMPLEMENTATION_GUIDE.md (انگلیسی)
-  ├─ DEPLOYMENT.md (انگلیسی)
-  └─ README_FA.md (فارسی - همین فایل)
-```
+✅ Command/
+  └─ RescheduleEntityActionsCommand.php (جایگزین RescheduleOpportunityActionsCommand)
 
-### تغییر یافته (۴ فایل):
-```
-Form/Type/
-  └─ PostmarkSendType.php (اضافه شدن Mode selector)
+✅ Config/
+  └─ services.php (ثبت همه سرویس‌ها)
 
-EventListener/
-  └─ CampaignSubscriber.php (اضافه شدن ~500 خط)
+✅ Translations/en_US/
+  └─ messages.ini (ترجمه‌های Mode)
 
-Config/
-  └─ services.php (ثبت سرویس‌های جدید)
-
-Translations/en_US/
-  └─ messages.ini (ترجمه‌های جدید)
+✅ مستندات/
+  ├─ IMPLEMENTATION_GUIDE.md (راهنمای پیاده‌سازی - انگلیسی)
+  ├─ DEPLOYMENT.md (راهنمای استقرار - انگلیسی)
+  ├─ ENTITY_EMAIL_AUTOMATION.md (راهنمای اتوماسیون - انگلیسی)
+  ├─ README_FA.md (راهنمای کامل - فارسی)
+  ├─ SENDING_CONDITIONS_FA.md (شرایط ارسال - فارسی)
+  ├─ README_SUITECRM.md (یکپارچگی SuiteCRM)
+  └─ OPPORTUNITY_EMAIL_AUTOMATION.md (⚠️ منسوخ شده)
 ```
 
 ---
@@ -473,6 +474,6 @@ Translations/en_US/
 
 ---
 
-**تاریخ بروزرسانی:** ۱۴۰۴/۰۸/۱۲
+**تاریخ بروزرسانی:** ۱۴۰۴/۰۸/۱۴
 **وضعیت:** ✅ آماده برای استفاده در Production
 **نسخه:** 1.0.0

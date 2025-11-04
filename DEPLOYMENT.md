@@ -151,12 +151,19 @@ mysql -u [user] -p mautic -e "DESCRIBE postmark_entity_send_log"
 ### 1. Create a Campaign
 
 1. Go to **Campaigns** → **New Campaign**
-2. Add a **Condition** node: (Future: "Has Matching Opportunities" or "Has Matching Notes")
-   - Configure filter criteria for Opportunities or Notes
-   - Ensure "Store results" is enabled (default)
+2. Add a **Condition** node (optional): Use standard Mautic conditions to filter contacts
+   - Example: "Opportunity Field Value" to check for specific salesStage
+   - Example: "Note Field Value" to check for specific flags
+   - Example: "Event Field Value" to check for event criteria
 3. Add an **Action** node: "Send Email via Postmark"
-   - **Mode**: Select "Per Opportunity" or "Per Note"
+   - **Mode**: Select from:
+     - "Per Contact" (default - one email per contact)
+     - "Per Event" (one email per matching event)
+     - "Per Opportunity" (one email per matching opportunity)
+     - "Per Note" (one email per matching note)
    - Configure email settings (from, to, template, etc.)
+
+**Note:** For entity modes (event/opportunity/note), the action will query and send to ALL matching entities for each contact. Use campaign conditions to pre-filter contacts, then the action handles entity-level sends.
 
 ### 2. Token Resolution
 
@@ -188,169 +195,56 @@ The system automatically prevents duplicate sends:
 - Reruns of the campaign will skip already-sent entities
 - Failed sends can be retried after fixing the error
 
-## Pending Implementation
+## Current Implementation Status
 
-### Campaign Condition Nodes
+### Entity Modes Fully Implemented
 
-**Status:** Not yet implemented
+All entity modes are **fully implemented and operational**:
 
-Two condition node types need to be created:
+#### 1. Contact Mode (Default)
+- Sends one email per contact
+- Original behavior, fully backward compatible
 
-#### 1. "Has Matching Opportunities" Condition
-- Event type: `postmark.condition.has_opportunities`
-- Stores matching Opportunity IDs in `campaign_entity_condition_result` table
-- On evaluation:
-  - Build `EntityFilterSpec` from node config
-  - Find matching Opportunities for contact using `OpportunityCriteriaBuilder`
-  - Store results with entity_type='opportunity'
-  - Return TRUE if matches > 0
+#### 2. Event Mode
+- Sends one email per matching event
+- Uses `sendPerEvent()` method in CampaignSubscriber
+- **Note:** Event mode does NOT use `campaign_entity_condition_result` table
+- Instead, it queries events directly using `EventCriteriaBuilder`
+- Supports all standard campaign conditions
 
-#### 2. "Has Matching Notes" Condition
-- Event type: `postmark.condition.has_notes`
-- Same as above but for Notes entity
-- Uses `NoteCriteriaBuilder`
+#### 3. Opportunity Mode
+- Sends one email per matching opportunity
+- Uses `sendPerOpportunity()` method in CampaignSubscriber
+- Can store filter results in `campaign_entity_condition_result` table
+- Supports relationship-aware filtering (linked to Events)
 
-**Implementation Location:** Create `EventListener/PostmarkConditionSubscriber.php`
+#### 4. Note Mode
+- Sends one email per matching note
+- Uses `sendPerNote()` method in CampaignSubscriber
+- Can store filter results in `campaign_entity_condition_result` table
+- Supports relationship-aware filtering (linked to Events)
 
-**Sample Code Structure:**
-```php
-<?php
+### Automatic Reschedule System
 
-namespace MauticPlugin\MauticPostmarkBundle\EventListener;
+To handle newly created entities after campaign execution:
 
-use Mautic\CampaignBundle\Event\CampaignBuilderEvent;
-use Mautic\CampaignBundle\Event\ConditionEvent;
-use Mautic\CampaignBundle\CampaignEvents;
-use MauticPlugin\MauticPostmarkBundle\Service\OpportunityCriteriaBuilder;
-use MauticPlugin\MauticPostmarkBundle\Service\NoteCriteriaBuilder;
-use MauticPlugin\MauticPostmarkBundle\DTO\EntityFilterSpec;
-use MauticPlugin\MauticPostmarkBundle\Entity\CampaignEntityConditionResult;
-use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+**Command:** `mautic:postmark:reschedule-entities`
+- Replaces legacy `mautic:postmark:reschedule-opportunities` command
+- Supports all entity types: opportunity, note, event
+- Options:
+  - `-i, --campaign-id`: Target specific campaign
+  - `-m, --mode`: Target specific mode (opportunity, note, event)
 
-class PostmarkConditionSubscriber implements EventSubscriberInterface
-{
-    private OpportunityCriteriaBuilder $opportunityBuilder;
-    private NoteCriteriaBuilder $noteBuilder;
-    private EntityManagerInterface $em;
+**Crontab Setup:**
+```bash
+# Reschedule entity actions every 10 minutes
+*/10 * * * * php /path/to/mautic/bin/console mautic:postmark:reschedule-entities
 
-    public function __construct(
-        OpportunityCriteriaBuilder $opportunityBuilder,
-        NoteCriteriaBuilder $noteBuilder,
-        EntityManagerInterface $em
-    ) {
-        $this->opportunityBuilder = $opportunityBuilder;
-        $this->noteBuilder = $noteBuilder;
-        $this->em = $em;
-    }
-
-    public static function getSubscribedEvents(): array
-    {
-        return [
-            CampaignEvents::CAMPAIGN_ON_BUILD => ['onCampaignBuild', 0],
-            'postmark.condition.has_opportunities' => ['onHasOpportunities', 0],
-            'postmark.condition.has_notes' => ['onHasNotes', 0],
-        ];
-    }
-
-    public function onCampaignBuild(CampaignBuilderEvent $event): void
-    {
-        // Register condition nodes
-        $event->addCondition(
-            'postmark.condition.has_opportunities',
-            [
-                'label' => 'Has Matching Opportunities',
-                'description' => 'Check if contact has opportunities matching criteria',
-                'formType' => OpportunityFilterType::class, // TODO: Create this form
-                'eventName' => 'postmark.condition.has_opportunities',
-            ]
-        );
-
-        $event->addCondition(
-            'postmark.condition.has_notes',
-            [
-                'label' => 'Has Matching Notes',
-                'description' => 'Check if contact has notes matching criteria',
-                'formType' => NoteFilterType::class, // TODO: Create this form
-                'eventName' => 'postmark.condition.has_notes',
-            ]
-        );
-    }
-
-    public function onHasOpportunities(ConditionEvent $event): void
-    {
-        $config = $event->getEvent()->getProperties();
-        $contact = $event->getContact();
-        $contactId = $contact->getId();
-
-        // Build filter spec from config
-        $spec = EntityFilterSpec::fromArray('opportunity', $config['criteria'] ?? []);
-
-        // Find matching opportunities
-        $opportunityIds = $this->opportunityBuilder->findMatchingIdsForContact($contactId, $spec);
-
-        if (count($opportunityIds) > 0) {
-            // Store results
-            $this->storeConditionResult(
-                $event->getEvent()->getCampaign()->getId(),
-                $event->getEvent()->getId(),
-                $contactId,
-                'opportunity',
-                $spec,
-                $opportunityIds
-            );
-
-            // Pass condition
-            $event->setResult(true);
-        } else {
-            $event->setResult(false);
-        }
-    }
-
-    public function onHasNotes(ConditionEvent $event): void
-    {
-        // Similar to onHasOpportunities but for Notes
-        // ...
-    }
-
-    private function storeConditionResult(
-        int $campaignId,
-        int $campaignEventId,
-        int $contactId,
-        string $entityType,
-        EntityFilterSpec $spec,
-        array $entityIds
-    ): void {
-        $result = new CampaignEntityConditionResult();
-        $result->setCampaignId($campaignId);
-        $result->setCampaignEventId($campaignEventId);
-        $result->setContactId($contactId);
-        $result->setEntityType($entityType);
-        $result->setSpecJson($spec->toJson());
-
-        // Store IDs (up to 1000, otherwise use child table)
-        if (count($entityIds) <= 1000) {
-            $result->setEntityIds($entityIds);
-        } else {
-            // TODO: Implement child table storage for large sets
-            $result->setEntityIdsJson(null);
-        }
-
-        $this->em->persist($result);
-        $this->em->flush();
-    }
-}
+# Trigger campaigns every 5 minutes
+*/5 * * * * php /path/to/mautic/bin/console mautic:campaigns:trigger
 ```
 
-**Registration in services.php:**
-```php
-$services->set('mautic.postmark.condition.subscriber')
-    ->class(\MauticPlugin\MauticPostmarkBundle\EventListener\PostmarkConditionSubscriber::class)
-    ->arg('$opportunityBuilder', service('mautic.postmark.criteria_builder.opportunity'))
-    ->arg('$noteBuilder', service('mautic.postmark.criteria_builder.note'))
-    ->arg('$em', service('doctrine.orm.entity_manager'))
-    ->tag('kernel.event_subscriber');
-```
+See [ENTITY_EMAIL_AUTOMATION.md](ENTITY_EMAIL_AUTOMATION.md) for complete automation setup.
 
 ## Testing Checklist
 
@@ -470,6 +364,6 @@ $deleted = $conditionRepo->deleteOlderThan(30); // Delete condition results olde
 
 ---
 
-**Last Updated:** 2025-11-02
+**Last Updated:** 2025-11-04
 **Version:** 1.0
-**Status:** Core implementation complete, condition nodes pending
+**Status:** ✅ Fully implemented and operational - all 4 entity modes working

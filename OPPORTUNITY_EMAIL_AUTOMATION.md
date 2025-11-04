@@ -1,10 +1,15 @@
-# Automatic Email Sending for New Opportunities
+# ⚠️ DEPRECATED - DO NOT USE
 
-> **Note**: This documentation has been superseded by [ENTITY_EMAIL_AUTOMATION.md](ENTITY_EMAIL_AUTOMATION.md) which covers all entity types (Opportunity, Note, and Event). Please refer to the new documentation for complete information.
+> **IMPORTANT**: This documentation is **DEPRECATED** and outdated. It has been superseded by [ENTITY_EMAIL_AUTOMATION.md](ENTITY_EMAIL_AUTOMATION.md) which covers all entity types (Opportunity, Note, and Event) with the correct command names and implementation details.
+>
+> **This file is kept for historical reference only. Please use ENTITY_EMAIL_AUTOMATION.md for current documentation.**
 
 ---
 
-# Legacy Documentation (For Reference Only)
+# Legacy Documentation (Outdated - For Historical Reference Only)
+
+**Deprecated:** 2025-11-04
+**Reason:** Command names changed, implementation evolved to support all entity types
 
 # Automatic Email Sending for New Opportunities
 
@@ -14,13 +19,18 @@ When running a campaign with "Per Opportunity" send mode, emails are sent to exi
 ## Root Cause
 The original OpportunityLifecycleSubscriber was designed to automatically queue campaign executions when opportunities are created, but it relies on Doctrine lifecycle events which aren't triggered when opportunities are created through the Mautic UI.
 
-## Solution
-A new command `mautic:postmark:reschedule-opportunities` has been implemented that reschedules opportunity-mode Postmark actions so they check for new opportunities on the next campaign run.
+## Solution (OUTDATED)
+~~A new command `mautic:postmark:reschedule-opportunities` has been implemented~~
+
+**CURRENT:** Use `mautic:postmark:reschedule-entities` which supports all entity types (opportunity, note, event).
+See [ENTITY_EMAIL_AUTOMATION.md](ENTITY_EMAIL_AUTOMATION.md) for current documentation.
 
 ## How It Works
 
-### 1. The Reschedule Command
-The command `/var/www/html/mautic_dev/plugins/MauticPostmarkBundle/Command/RescheduleOpportunityActionsCommand.php`:
+### 1. The Reschedule Command (OUTDATED)
+~~The command `/var/www/html/mautic_dev/plugins/MauticPostmarkBundle/Command/RescheduleOpportunityActionsCommand.php`~~
+
+**CURRENT:** Command renamed to `RescheduleEntityActionsCommand.php` and supports all entity types.
 - Finds all Postmark campaign actions configured in "opportunity" mode
 - Reschedules contacts who have already executed the action so they can be re-evaluated
 - Checks for new opportunities that match campaign conditions
