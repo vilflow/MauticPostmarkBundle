@@ -50,7 +50,7 @@ class PostmarkSendType extends AbstractType
                     'mautic.postmark.form.mode.opportunity' => 'opportunity',
                     'mautic.postmark.form.mode.note'        => 'note',
                 ],
-                'expanded'    => true, // Render as radio buttons
+                // 'expanded'    => true, // Render as radio buttons
                 'multiple'    => false,
                 'attr'        => [
                     'class'           => 'form-control postmark-mode-selector',
