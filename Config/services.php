@@ -71,6 +71,16 @@ return function (ContainerConfigurator $configurator): void {
         ->arg('$logger', service('monolog.logger.mautic'))
         ->tag('doctrine.event_subscriber');
 
+    // Register EntityCampaignSubscriber for Entity-Based Campaigns
+    // This handles postmark.send actions in entity-based campaigns (opportunity, event, note)
+    $services->set('mautic.postmark.entity_campaign.subscriber')
+        ->class(\MauticPlugin\MauticPostmarkBundle\EventListener\EntityCampaignSubscriber::class)
+        ->arg('$connection', service('database_connection'))
+        ->arg('$suiteCRMService', service(SuiteCRMService::class))
+        ->arg('$logger', service('monolog.logger.mautic'))
+        ->arg('$em', service('doctrine.orm.entity_manager'))
+        ->tag('kernel.event_subscriber');
+
     // Register the reschedule entities command (handles opportunity, note, and event modes)
     $services->set('mautic.postmark.command.reschedule_entities')
         ->class(\MauticPlugin\MauticPostmarkBundle\Command\RescheduleEntityActionsCommand::class)

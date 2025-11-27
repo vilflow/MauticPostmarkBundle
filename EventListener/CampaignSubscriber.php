@@ -82,32 +82,31 @@ class CampaignSubscriber implements EventSubscriberInterface
 
     }
 
+    /**
+     * Handle Postmark send action for CONTACT-BASED campaigns.
+     *
+     * NOTE: This subscriber only handles regular contact-based campaigns.
+     * Entity-based campaigns (opportunity, event, note) are handled by
+     * EntityCampaignSubscriber which listens to MauticEntityBasedCampaignEvents.
+     *
+     * The PendingEvent from Mautic's CampaignBundle is ONLY dispatched for
+     * contact-based campaigns, so we always use sendPerContact here.
+     */
     public function onCampaignTriggerPostmark(PendingEvent $event): void
     {
-
         if (!$event->checkContext('postmark.send')) {
             return;
         }
 
         $config = $event->getEvent()->getProperties();
-        $mode = trim((string) ($config['mode'] ?? 'contact'));
 
-        // Route to appropriate handler based on mode
-        switch ($mode) {
-            case 'event':
-                $this->sendPerEvent($event, $config);
-                return;
-            case 'opportunity':
-                $this->sendPerOpportunity($event, $config);
-                return;
-            case 'note':
-                $this->sendPerNote($event, $config);
-                return;
-            case 'contact':
-            default:
-                $this->sendPerContact($event, $config);
-                return;
-        }
+        $this->logger->info('CampaignSubscriber: Processing postmark.send for contact-based campaign', [
+            'campaign_id' => $event->getEvent()->getCampaign()->getId(),
+        ]);
+
+        // This subscriber only handles contact-based campaigns
+        // Entity-based campaigns use EntityCampaignSubscriber
+        $this->sendPerContact($event, $config);
     }
 
     /**
@@ -1145,6 +1144,10 @@ class CampaignSubscriber implements EventSubscriberInterface
         array $entities = []
     ): string {
         switch ($module) {
+            case 'static':
+                // Static value - return the field as-is (it's actually the static value)
+                return $field;
+
             case 'lead':
             case 'contact':
                 return $this->stringify($profileFields[$field] ?? null);

@@ -305,29 +305,39 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
     variableLabel.append('<div class="input-group"><span class="input-group-addon"><i class="fa fa-code"></i></span><input type="text" class="form-control" value="{{' + variable + '}}" readonly style="background: #fff; cursor: not-allowed;"></div>');
     row.append(variableLabel);
 
-    // Module dropdown
+    // Module dropdown (with Static Value option)
     var moduleGroup = mQuery('<div class="form-group" style="margin-bottom: 10px;"></div>');
-    moduleGroup.append('<label class="control-label">Module</label>');
+    moduleGroup.append('<label class="control-label">Value Type</label>');
 
     var moduleSelect = mQuery('<select class="form-control postmark-module-select" data-variable="' + variable + '" data-index="' + index + '"></select>');
-    moduleSelect.append('<option value="">-- Select Module --</option>');
+    moduleSelect.append('<option value="">-- Select Type --</option>');
+    moduleSelect.append('<option value="static">📝 Static Value (Manual Input)</option>');
 
     mQuery.each(modules, function(moduleKey, moduleName) {
-        moduleSelect.append('<option value="' + moduleKey + '">' + moduleName + '</option>');
+        moduleSelect.append('<option value="' + moduleKey + '">🔗 ' + moduleName + ' Field</option>');
     });
 
     moduleGroup.append(moduleSelect);
     row.append(moduleGroup);
 
-    // Field dropdown (initially empty)
-    var fieldGroup = mQuery('<div class="form-group" style="margin-bottom: 0;"></div>');
+    // Field dropdown (initially empty) - for module fields
+    var fieldGroup = mQuery('<div class="form-group postmark-field-group" style="margin-bottom: 0;"></div>');
     fieldGroup.append('<label class="control-label">Field</label>');
 
     var fieldSelect = mQuery('<select class="form-control postmark-field-select" data-variable="' + variable + '" data-index="' + index + '" disabled></select>');
-    fieldSelect.append('<option value="">-- Select Module First --</option>');
+    fieldSelect.append('<option value="">-- Select Type First --</option>');
 
     fieldGroup.append(fieldSelect);
     row.append(fieldGroup);
+
+    // Static value input (initially hidden) - for manual text input
+    var staticGroup = mQuery('<div class="form-group postmark-static-group" style="margin-bottom: 0; display: none;"></div>');
+    staticGroup.append('<label class="control-label">Static Value</label>');
+
+    var staticInput = mQuery('<input type="text" class="form-control postmark-static-input" data-variable="' + variable + '" data-index="' + index + '" placeholder="Enter static value...">');
+    staticGroup.append(staticInput);
+
+    row.append(staticGroup);
 
     // Add hidden inputs to store the mapping (for form submission)
     // Use the dynamic field name prefix
@@ -336,17 +346,49 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
     hiddenInputs.append('<input type="hidden" class="postmark-hidden-field" name="' + fieldNamePrefix + '[list][' + index + '][value]" value="">');
     row.append(hiddenInputs);
 
-    // Add event handler for module selection
+    // Add event handler for module/type selection
     moduleSelect.on('change', function() {
         var selectedModule = mQuery(this).val();
         var relatedFieldSelect = row.find('.postmark-field-select');
+        var relatedFieldGroup = row.find('.postmark-field-group');
+        var relatedStaticInput = row.find('.postmark-static-input');
+        var relatedStaticGroup = row.find('.postmark-static-group');
         var hiddenField = row.find('.postmark-hidden-field');
 
+        console.log('Postmark: Module selected:', selectedModule);
+        console.log('Postmark: Static group found:', relatedStaticGroup.length);
+        console.log('Postmark: Field group found:', relatedFieldGroup.length);
+
         if (!selectedModule) {
-            relatedFieldSelect.empty().append('<option value="">-- Select Module First --</option>').prop('disabled', true);
+            // Nothing selected - show field dropdown disabled
+            relatedFieldGroup.css('display', 'block');
+            relatedStaticGroup.css('display', 'none');
+            relatedFieldSelect.empty().append('<option value="">-- Select Type First --</option>').prop('disabled', true);
+            relatedStaticInput.val('');
             hiddenField.val('');
             return;
         }
+
+        if (selectedModule === 'static') {
+            // Static value selected - show text input, hide field dropdown
+            console.log('Postmark: Static value selected, showing static input');
+            relatedFieldGroup.css('display', 'none');
+            relatedStaticGroup.css('display', 'block');
+            relatedFieldSelect.empty().prop('disabled', true);
+            // Don't overwrite if static input already has a value
+            if (!relatedStaticInput.val()) {
+                hiddenField.val('static:');
+            } else {
+                hiddenField.val('static:' + relatedStaticInput.val());
+            }
+            console.log('Postmark: Static group display now:', relatedStaticGroup.css('display'));
+            return;
+        }
+
+        // Module selected - show field dropdown, hide static input
+        relatedFieldGroup.css('display', 'block');
+        relatedStaticGroup.css('display', 'none');
+        relatedStaticInput.val('');
 
         // Load fields for selected module
         Mautic.postmarkLoadModuleFields(selectedModule, relatedFieldSelect, hiddenField);
@@ -359,11 +401,20 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
         var hiddenField = row.find('.postmark-hidden-field');
 
         // Store in format "module:field" so we can restore it later
-        if (selectedField && selectedModule) {
+        if (selectedField && selectedModule && selectedModule !== 'static') {
             hiddenField.val(selectedModule + ':' + selectedField);
         } else {
             hiddenField.val('');
         }
+    });
+
+    // Add event handler for static input
+    staticInput.on('input', function() {
+        var staticValue = mQuery(this).val();
+        var hiddenField = row.find('.postmark-hidden-field');
+
+        // Store in format "static:value"
+        hiddenField.val('static:' + staticValue);
     });
 
     return row;
@@ -592,23 +643,41 @@ Mautic.postmarkPreSelectSavedMapping = function(row, savedModule, savedValue) {
 
     var moduleSelect = row.find('.postmark-module-select');
     var fieldSelect = row.find('.postmark-field-select');
+    var fieldGroup = row.find('.postmark-field-group');
+    var staticInput = row.find('.postmark-static-input');
+    var staticGroup = row.find('.postmark-static-group');
     var hiddenField = row.find('.postmark-hidden-field');
 
-    // Parse the saved value - could be "module:field" or just "field"
+    // Parse the saved value - could be "module:field", "static:value", or just "field"
     var module = savedModule;
     var field = savedValue;
 
     if (savedValue && savedValue.indexOf(':') > 0) {
         var parts = savedValue.split(':');
         module = parts[0];
-        field = parts[1];
+        field = parts.slice(1).join(':'); // In case the value itself contains ':'
     }
 
     console.log('Postmark: Parsed module:', module, 'field:', field);
 
+    // Handle static values
+    if (module === 'static') {
+        console.log('Postmark: Pre-selecting static value:', field);
+        moduleSelect.val('static');
+        fieldGroup.css('display', 'none');
+        staticGroup.css('display', 'block');
+        staticInput.val(field);
+        hiddenField.val('static:' + field);
+        return;
+    }
+
     if (module) {
         // Set the module dropdown
         moduleSelect.val(module);
+
+        // Show field group, hide static group
+        fieldGroup.css('display', 'block');
+        staticGroup.css('display', 'none');
 
         // Load fields for this module
         fieldSelect.prop('disabled', true);
@@ -647,7 +716,7 @@ Mautic.postmarkPreSelectSavedMapping = function(row, savedModule, savedValue) {
         // No module info, just show the raw saved value
         var noteHtml = '<div class="alert alert-info" style="margin-top: 10px; margin-bottom: 0;">' +
             '<i class="fa fa-info-circle"></i> Saved value: <strong>' + savedValue + '</strong><br>' +
-            '<small>Please select the module and field to update this mapping.</small>' +
+            '<small>Please select the type and field to update this mapping.</small>' +
             '</div>';
         row.find('.form-group').last().after(noteHtml);
         hiddenField.val(savedValue);

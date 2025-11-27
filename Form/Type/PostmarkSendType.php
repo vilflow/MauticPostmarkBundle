@@ -36,32 +36,11 @@ class PostmarkSendType extends AbstractType
 
         // Get existing data to preserve saved values
         $existingData = $builder->getData();
-        $currentMode = $existingData['mode'] ?? 'contact'; // Default to 'contact' only if not set
 
-        // Mode selector for per-entity sends
-        $builder
-            ->add('mode', ChoiceType::class, [
-                'label'       => 'mautic.postmark.form.mode',
-                'required'    => true,
-                'data'        => $currentMode, // Use saved value or default
-                'choices'     => [
-                    'mautic.postmark.form.mode.contact'     => 'contact',
-                    'mautic.postmark.form.mode.event'       => 'event',
-                    'mautic.postmark.form.mode.opportunity' => 'opportunity',
-                    'mautic.postmark.form.mode.note'        => 'note',
-                ],
-                // 'expanded'    => true, // Render as radio buttons
-                'multiple'    => false,
-                'attr'        => [
-                    'class'           => 'form-control postmark-mode-selector',
-                    'data-toggle'     => 'tooltip',
-                    'data-placement'  => 'top',
-                    'title'           => 'mautic.postmark.form.mode.tooltip',
-                ],
-                'label_attr'  => [
-                    'class' => 'control-label',
-                ],
-            ]);
+        // NOTE: Send Mode is now automatically determined based on:
+        // - If campaign uses Entity-Based Segments: uses the segment's entityType (event/opportunity/note)
+        // - If campaign uses regular lead segments: uses 'contact' mode
+        // The mode field has been removed from the UI as it's no longer user-selectable.
 
         // Authentication & Configuration Section
         // $builder

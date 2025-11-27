@@ -79,6 +79,32 @@
     margin-top: 10px;
 }
 
+/* Static value input styling */
+.postmark-static-group {
+    transition: all 0.2s ease;
+}
+
+.postmark-static-group .postmark-static-input {
+    border: 2px solid #28a745;
+    background-color: #f8fff9;
+}
+
+.postmark-static-group .postmark-static-input:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+}
+
+.postmark-static-group .postmark-static-input::placeholder {
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Highlight static value option in module select */
+.postmark-module-select option[value="static"] {
+    background-color: #e8f5e9;
+    font-weight: bold;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .postmark-mapping-row {
