@@ -259,13 +259,13 @@ class CampaignSubscriber implements EventSubscriberInterface
     {
         $profileFields = $contact->getProfileFields();
 
-        $from = $this->resolveTemplateValue($from, $contact, $profileFields, null);
-        $to   = $this->resolveTemplateValue($to, $contact, $profileFields, null);
+        $from = $this->resolveTemplateValue($from, $contact, $profileFields, []);
+        $to   = $this->resolveTemplateValue($to, $contact, $profileFields, []);
 
         $resolvedModel = [];
         foreach ($templateModel as $key => $value) {
             $resolvedModel[$key] = is_string($value)
-                ? $this->resolveTemplateValue($value, $contact, $profileFields, null)
+                ? $this->resolveTemplateValue($value, $contact, $profileFields, [])
                 : $value;
         }
 

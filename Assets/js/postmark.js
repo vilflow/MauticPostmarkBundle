@@ -359,6 +359,15 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
         console.log('Postmark: Static group found:', relatedStaticGroup.length);
         console.log('Postmark: Field group found:', relatedFieldGroup.length);
 
+        // DEBUG: Track campaign builder connections before and after
+        if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+            var connections = Mautic.campaignBuilderInstance.getConnections();
+            console.log('Postmark DEBUG: Connections BEFORE module change:', connections.length);
+            connections.forEach(function(conn, idx) {
+                console.log('  Connection ' + idx + ': ' + conn.sourceId + ' -> ' + conn.targetId);
+            });
+        }
+
         if (!selectedModule) {
             // Nothing selected - show field dropdown disabled
             relatedFieldGroup.css('display', 'block');
@@ -392,6 +401,17 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
 
         // Load fields for selected module
         Mautic.postmarkLoadModuleFields(selectedModule, relatedFieldSelect, hiddenField);
+
+        // DEBUG: Check connections after a short delay
+        setTimeout(function() {
+            if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+                var connectionsAfter = Mautic.campaignBuilderInstance.getConnections();
+                console.log('Postmark DEBUG: Connections AFTER module change (500ms):', connectionsAfter.length);
+                connectionsAfter.forEach(function(conn, idx) {
+                    console.log('  Connection ' + idx + ': ' + conn.sourceId + ' -> ' + conn.targetId);
+                });
+            }
+        }, 500);
     });
 
     // Add event handler for field selection
@@ -424,6 +444,12 @@ Mautic.postmarkCreateMappingRow = function(variable, index, modules, fieldNamePr
 Mautic.postmarkLoadModuleFields = function(module, fieldSelect, hiddenField) {
     console.log('Postmark JS: Loading fields for module:', module);
 
+    // DEBUG: Check connections before AJAX
+    if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+        var connsBefore = Mautic.campaignBuilderInstance.getConnections();
+        console.log('Postmark DEBUG: Connections BEFORE AJAX call:', connsBefore.length);
+    }
+
     // Show loading state
     fieldSelect.empty().append('<option value="">Loading fields...</option>').prop('disabled', true);
     hiddenField.val('');
@@ -441,6 +467,12 @@ Mautic.postmarkLoadModuleFields = function(module, fieldSelect, hiddenField) {
             console.log('Postmark JS: response.fields =', response.fields);
             console.log('Postmark JS: Field count =', response.fields ? Object.keys(response.fields).length : 0);
 
+            // DEBUG: Check connections after AJAX response
+            if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+                var connsAfterAjax = Mautic.campaignBuilderInstance.getConnections();
+                console.log('Postmark DEBUG: Connections AFTER AJAX success:', connsAfterAjax.length);
+            }
+
             fieldSelect.empty().prop('disabled', false);
 
             if (response.success && response.fields && Object.keys(response.fields).length > 0) {
@@ -454,6 +486,12 @@ Mautic.postmarkLoadModuleFields = function(module, fieldSelect, hiddenField) {
                 console.log('Postmark JS: No fields found, showing message');
                 var message = response.message || 'No fields found for this module';
                 fieldSelect.append('<option value="">' + message + '</option>');
+            }
+
+            // DEBUG: Check connections after DOM updates
+            if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+                var connsAfterDom = Mautic.campaignBuilderInstance.getConnections();
+                console.log('Postmark DEBUG: Connections AFTER DOM updates:', connsAfterDom.length);
             }
         },
         error: function(xhr, status, error) {
@@ -555,6 +593,15 @@ Mautic.postmarkInitializeOnLoad = function() {
         campaignForm.off('submit.postmark').on('submit.postmark', function(e) {
             console.log('Postmark: Form submitting, checking hidden inputs');
 
+            // DEBUG: Log campaign builder state before submit
+            if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+                var connsBefore = Mautic.campaignBuilderInstance.getConnections();
+                console.log('Postmark DEBUG: Connections BEFORE form submit:', connsBefore.length);
+                connsBefore.forEach(function(conn, idx) {
+                    console.log('  Connection ' + idx + ': ' + conn.sourceId + ' -> ' + conn.targetId);
+                });
+            }
+
             // Set flag to prevent reinitialization during submission
             window.postmarkFormSubmitting = true;
             console.log('Postmark: Set formSubmitting flag to true');
@@ -576,6 +623,15 @@ Mautic.postmarkInitializeOnLoad = function() {
             setTimeout(function() {
                 window.postmarkFormSubmitting = false;
                 console.log('Postmark: Reset formSubmitting flag to false');
+
+                // DEBUG: Log campaign builder state after submit completes
+                if (typeof Mautic !== 'undefined' && typeof Mautic.campaignBuilderInstance !== 'undefined') {
+                    var connsAfter = Mautic.campaignBuilderInstance.getConnections();
+                    console.log('Postmark DEBUG: Connections AFTER form submit (3s):', connsAfter.length);
+                    connsAfter.forEach(function(conn, idx) {
+                        console.log('  Connection ' + idx + ': ' + conn.sourceId + ' -> ' + conn.targetId);
+                    });
+                }
             }, 3000);
 
             // Let the form submit normally
@@ -791,20 +847,29 @@ mQuery(document).ready(function() {
             subtree: true
         });
 
-        // When modal is shown, start retry mechanism
+        // When modal is shown, start retry mechanism - but ONLY for Postmark forms
         mQuery(document).on('shown.bs.modal', '.modal', function() {
-            console.log('Postmark: Modal shown, starting retry mechanism');
-            // Reset the flag when a new modal opens
-            window.postmarkFormSubmitting = false;
-            setTimeout(function() {
-                Mautic.postmarkWaitForSortableList(0, 10);
-            }, 300);
+            var modal = mQuery(this);
+            // Only handle modals that contain Postmark form elements
+            if (modal.find('.postmark-server-select, .postmark-template-select, [id*="postmark"]').length > 0 ||
+                modal.find('form[name="postmark_send"]').length > 0) {
+                console.log('Postmark: Modal shown (Postmark form detected), starting retry mechanism');
+                window.postmarkFormSubmitting = false;
+                setTimeout(function() {
+                    Mautic.postmarkWaitForSortableList(0, 10);
+                }, 300);
+            }
         });
 
-        // When modal is hidden/closed, reset the flag
+        // When modal is hidden/closed, reset the flag - but ONLY for Postmark forms
         mQuery(document).on('hidden.bs.modal', '.modal', function() {
-            console.log('Postmark: Modal closed, resetting formSubmitting flag');
-            window.postmarkFormSubmitting = false;
+            var modal = mQuery(this);
+            // Only handle modals that contain Postmark form elements
+            if (modal.find('.postmark-server-select, .postmark-template-select, [id*="postmark"]').length > 0 ||
+                modal.find('form[name="postmark_send"]').length > 0) {
+                console.log('Postmark: Modal closed (Postmark form), resetting formSubmitting flag');
+                window.postmarkFormSubmitting = false;
+            }
         });
 
         // Listen for AJAX complete to check for errors

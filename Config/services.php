@@ -87,4 +87,10 @@ return function (ContainerConfigurator $configurator): void {
         ->arg('$connection', service('database_connection'))
         ->arg('$logger', service('monolog.logger.mautic'))
         ->tag('console.command');
+
+    // Register ReportSubscriber for Postmark campaign logs reports
+    $services->set('mautic.postmark.report.subscriber')
+        ->class(\MauticPlugin\MauticPostmarkBundle\EventListener\ReportSubscriber::class)
+        ->arg('$connection', service('database_connection'))
+        ->tag('kernel.event_subscriber');
 };
